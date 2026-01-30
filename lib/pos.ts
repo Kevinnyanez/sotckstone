@@ -328,7 +328,8 @@ export async function createSale(
                 direction: "IN",
                 amount: input.paidAmount,
                 reference_type: "SALE",
-                reference_id: fallbackSale.id
+                reference_id: fallbackSale.id,
+                payment_method: input.paymentMethod
               }
             ])
             .select("id");
@@ -437,7 +438,8 @@ export async function createSale(
             direction: "IN",
             amount: input.paidAmount,
             reference_type: "SALE",
-            reference_id: sale.id
+            reference_id: sale.id,
+            payment_method: input.paymentMethod
           }
         ])
         .select("id");
@@ -659,7 +661,8 @@ export async function confirmConditionalSale(
             amount: input.paidAmount,
             reference_type: "SALE",
             reference_id: sale.id,
-            note: input.notes ?? null
+            note: input.notes ?? null,
+            payment_method: input.paymentMethod
           }
         ])
         .select("id");
@@ -850,7 +853,8 @@ export async function payAccount(
           direction: "IN",
           amount: input.amount,
           reference_type: "PAYMENT",
-          note: input.notes ?? null
+          note: input.notes ?? null,
+          payment_method: input.paymentMethod
         }
       ])
       .select("id");
@@ -999,7 +1003,8 @@ export async function createExchange(
             direction: isIn ? "IN" : "OUT",
             amount: absAmount,
             reference_type: "EXCHANGE",
-            reference_id: exchange.id
+            reference_id: exchange.id,
+            payment_method: "CASH"
           }
         ])
         .select("id");
