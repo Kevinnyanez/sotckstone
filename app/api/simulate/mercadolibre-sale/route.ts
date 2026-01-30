@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
 
     const { error: insertError } = await supabase.from("stock_movements").insert({
       product_id: variant.product_id,
+      movement_type: "SALE_MERCADOLIBRE",
       type: "OUT",
       quantity: -quantity,
       reference_type: "MERCADOLIBRE_ORDER",
