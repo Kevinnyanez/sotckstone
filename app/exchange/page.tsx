@@ -1,0 +1,450 @@
+"use client";
+
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { getSupabaseClient } from "../../lib/supabaseClient";
+import { createExchange, type CreateExchangeInput } from "../../lib/pos";
+
+type Product = {
+  id: string;
+  name: string;
+  barcode: string;
+  price: number;
+};
+
+type ExchangeItemUI = {
+  productId: string;
+  name: string;
+  barcode: string;
+  unitPrice: number;
+  qty: number;
+};
+
+export default function ExchangePage() {
+  const supabase = getSupabaseClient();
+  const [barcodeIn, setBarcodeIn] = useState("");
+  const [barcodeOut, setBarcodeOut] = useState("");
+  const [itemsIn, setItemsIn] = useState<ExchangeItemUI[]>([]);
+  const [itemsOut, setItemsOut] = useState<ExchangeItemUI[]>([]);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customerId, setCustomerId] = useState<string | undefined>();
+  const [selectedCustomerName, setSelectedCustomerName] = useState<string | undefined>();
+  const [customerResults, setCustomerResults] = useState<
+    { id: string; full_name: string; phone: string | null }[]
+  >([]);
+  const [message, setMessage] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  const totalItemsIn = useMemo(() => itemsIn.length, [itemsIn]);
+  const totalItemsOut = useMemo(() => itemsOut.length, [itemsOut]);
+  const hasItems = itemsIn.length > 0 || itemsOut.length > 0;
+  const totalIn = useMemo(
+    () => itemsIn.reduce((acc, item) => acc + item.qty * item.unitPrice, 0),
+    [itemsIn]
+  );
+  const totalOut = useMemo(
+    () => itemsOut.reduce((acc, item) => acc + item.qty * item.unitPrice, 0),
+    [itemsOut]
+  );
+  const differenceAmount = useMemo(() => totalOut - totalIn, [totalOut, totalIn]);
+  const diffClass =
+    differenceAmount === 0
+      ? "text-slate-600"
+      : differenceAmount > 0
+        ? "text-emerald-600"
+        : "text-rose-600";
+  const requiresCustomer = differenceAmount < 0;
+  const messageTone = message
+    ? message.startsWith("Error")
+      ? "border-rose-200 bg-rose-50 text-rose-700"
+      : "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : "";
+
+  async function searchProduct(barcode: string) {
+    const { data, error } = await supabase
+      .from("products")
+      .select("id, name, barcode, price")
+      .eq("barcode", barcode.trim())
+      .maybeSingle();
+    if (error) throw error;
+    return data as Product | null;
+  }
+
+  async function addIn() {
+    setMessage(null);
+    if (!barcodeIn.trim()) return;
+    try {
+      const data = await searchProduct(barcodeIn);
+      if (!data) {
+        setMessage("Producto no encontrado");
+        return;
+      }
+      setItemsIn((prev) => addItem(prev, data));
+      setBarcodeIn("");
+    } catch {
+      setMessage("Error al buscar producto");
+    }
+  }
+
+  async function addOut() {
+    setMessage(null);
+    if (!barcodeOut.trim()) return;
+    try {
+      const data = await searchProduct(barcodeOut);
+      if (!data) {
+        setMessage("Producto no encontrado");
+        return;
+      }
+      setItemsOut((prev) => addItem(prev, data));
+      setBarcodeOut("");
+    } catch {
+      setMessage("Error al buscar producto");
+    }
+  }
+
+  function addItem(list: ExchangeItemUI[], product: Product) {
+    const existing = list.find((p) => p.productId === product.id);
+    if (existing) {
+      return list.map((p) =>
+        p.productId === product.id ? { ...p, qty: p.qty + 1 } : p
+      );
+    }
+    return [
+      ...list,
+      {
+        productId: product.id,
+        name: product.name,
+        barcode: product.barcode,
+        unitPrice: product.price,
+        qty: 1
+      }
+    ];
+  }
+
+  function updateQty(
+    list: ExchangeItemUI[],
+    setList: (items: ExchangeItemUI[]) => void,
+    productId: string,
+    qty: number
+  ) {
+    setList(
+      list.map((p) => (p.productId === productId ? { ...p, qty } : p))
+    );
+  }
+
+  function removeItem(
+    list: ExchangeItemUI[],
+    setList: (items: ExchangeItemUI[]) => void,
+    productId: string
+  ) {
+    setList(list.filter((p) => p.productId !== productId));
+  }
+
+  async function fetchCustomersByQuery(query: string) {
+    const { data, error } = await supabase
+      .from("customers")
+      .select("id, full_name, phone")
+      .or(`full_name.ilike.%${query}%,phone.ilike.%${query}%`)
+      .limit(10);
+    if (error) {
+      setMessage("Error al buscar clientes");
+      return;
+    }
+    setCustomerResults(data ?? []);
+  }
+
+  useEffect(() => {
+    if (!customerQuery.trim() || customerQuery.trim().length < 2) {
+      setCustomerResults([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      void fetchCustomersByQuery(customerQuery.trim());
+    }, 300);
+    return () => clearTimeout(t);
+  }, [customerQuery]);
+
+  function confirmExchange() {
+    setMessage(null);
+    if (requiresCustomer && !customerId) {
+      setMessage("Seleccione un cliente para saldo a favor.");
+      return;
+    }
+    startTransition(async () => {
+      const payload: CreateExchangeInput = {
+        customerId,
+        itemsIn: itemsIn.map((i) => ({ productId: i.productId, qty: i.qty })),
+        itemsOut: itemsOut.map((i) => ({ productId: i.productId, qty: i.qty })),
+        differenceAmount
+      };
+      const result = await createExchange(payload);
+      if (!result.ok) {
+        setMessage(`Error: ${result.error.message}`);
+        return;
+      }
+      setItemsIn([]);
+      setItemsOut([]);
+      setCustomerQuery("");
+      setCustomerId(undefined);
+      setSelectedCustomerName(undefined);
+      setCustomerResults([]);
+      setMessage(`Cambio registrado (#${result.data.exchangeId})`);
+    });
+  }
+
+  return (
+    <main className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-3xl font-semibold">Cambios de prenda</h1>
+          <div className="text-sm text-slate-500">
+            Entradas y salidas por código
+          </div>
+        </header>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Prendas que entran</h2>
+              <span className="text-sm text-slate-500">{totalItemsIn} items</span>
+            </div>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <input
+                value={barcodeIn}
+                onChange={(e) => setBarcodeIn(e.target.value)}
+                placeholder="Código de barras"
+                className="h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              />
+              <button
+                onClick={addIn}
+                disabled={isPending}
+                className="h-11 w-full rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 sm:w-auto"
+              >
+                {isPending ? "Agregando..." : "Agregar"}
+              </button>
+            </div>
+            {itemsIn.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-500">No hay productos.</p>
+            ) : (
+              <ul className="mt-4 space-y-2">
+                {itemsIn.map((item) => (
+                  <li
+                    key={item.productId}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2"
+                  >
+                    <div>
+                      <div className="text-sm font-medium">{item.name}</div>
+                      <div className="text-xs text-slate-500">{item.barcode}</div>
+                      <div className="text-xs text-slate-500">
+                        ${item.unitPrice.toFixed(2)} c/u
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        value={item.qty}
+                        onChange={(e) =>
+                          updateQty(
+                            itemsIn,
+                            setItemsIn,
+                            item.productId,
+                            Number(e.target.value)
+                          )
+                        }
+                        className="h-9 w-20 rounded-md border border-slate-300 px-2 text-center focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                      />
+                      <div className="text-xs font-semibold text-slate-700">
+                        ${(item.qty * item.unitPrice).toFixed(2)}
+                      </div>
+                      <button
+                        onClick={() => removeItem(itemsIn, setItemsIn, item.productId)}
+                        className="text-sm font-semibold text-rose-600 hover:text-rose-700"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Prendas que salen</h2>
+              <span className="text-sm text-slate-500">{totalItemsOut} items</span>
+            </div>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <input
+                value={barcodeOut}
+                onChange={(e) => setBarcodeOut(e.target.value)}
+                placeholder="Código de barras"
+                className="h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              />
+              <button
+                onClick={addOut}
+                disabled={isPending}
+                className="h-11 w-full rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 sm:w-auto"
+              >
+                {isPending ? "Agregando..." : "Agregar"}
+              </button>
+            </div>
+            {itemsOut.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-500">No hay productos.</p>
+            ) : (
+              <ul className="mt-4 space-y-2">
+                {itemsOut.map((item) => (
+                  <li
+                    key={item.productId}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2"
+                  >
+                    <div>
+                      <div className="text-sm font-medium">{item.name}</div>
+                      <div className="text-xs text-slate-500">{item.barcode}</div>
+                      <div className="text-xs text-slate-500">
+                        ${item.unitPrice.toFixed(2)} c/u
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        value={item.qty}
+                        onChange={(e) =>
+                          updateQty(
+                            itemsOut,
+                            setItemsOut,
+                            item.productId,
+                            Number(e.target.value)
+                          )
+                        }
+                        className="h-9 w-20 rounded-md border border-slate-300 px-2 text-center focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                      />
+                      <div className="text-xs font-semibold text-slate-700">
+                        ${(item.qty * item.unitPrice).toFixed(2)}
+                      </div>
+                      <button
+                        onClick={() => removeItem(itemsOut, setItemsOut, item.productId)}
+                        className="text-sm font-semibold text-rose-600 hover:text-rose-700"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold">Diferencia</h2>
+              <p className="text-sm text-slate-500">
+                Calculado automáticamente según los totales.
+              </p>
+            </div>
+            <div className={`text-2xl font-semibold ${diffClass}`}>
+              ${differenceAmount.toFixed(2)}
+            </div>
+          </div>
+          <p className="mt-4 text-sm">
+            <span className={`text-base font-semibold ${diffClass}`}>
+              {differenceAmount > 0
+                ? "Cliente paga"
+                : differenceAmount < 0
+                  ? "Saldo a favor"
+                  : "Sin diferencia"}
+            </span>
+          </p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 text-sm text-slate-600">
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+              <span>Total entra</span>
+              <span>${totalIn.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+              <span>Total sale</span>
+              <span>${totalOut.toFixed(2)}</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-lg font-semibold">Cliente</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Escribí nombre o teléfono; obligatorio si hay saldo a favor.
+          </p>
+          <input
+            value={customerQuery}
+            onChange={(e) => setCustomerQuery(e.target.value)}
+            placeholder="Nombre o teléfono"
+            className="mt-4 h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+          />
+          {customerResults.length > 0 && !customerId && (
+            <ul className="mt-3 space-y-2">
+              {customerResults.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomerId(c.id);
+                      setSelectedCustomerName(c.full_name);
+                      setCustomerQuery("");
+                      setCustomerResults([]);
+                    }}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    {c.full_name} {c.phone ? `(${c.phone})` : ""}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {customerId && selectedCustomerName && (
+            <div className="mt-4 flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <span className="text-sm font-medium text-slate-700">
+                Cliente: <span className="font-semibold">{selectedCustomerName}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomerId(undefined);
+                  setSelectedCustomerName(undefined);
+                }}
+                className="rounded px-2 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-200/60"
+              >
+                Quitar
+              </button>
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <button
+            onClick={confirmExchange}
+            disabled={isPending || !hasItems}
+            className="h-12 w-full rounded-lg bg-emerald-600 text-lg font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {isPending ? "Procesando..." : "Confirmar cambio"}
+          </button>
+          {!hasItems && (
+            <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              Agregue al menos un producto para continuar.
+            </p>
+          )}
+          {requiresCustomer && !customerId && (
+            <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              Seleccione un cliente para saldo a favor.
+            </p>
+          )}
+          {message && (
+            <p className={`mt-3 rounded-lg border px-3 py-2 text-sm ${messageTone}`}>
+              {message}
+            </p>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}

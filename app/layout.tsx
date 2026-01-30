@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -23,10 +24,55 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="es">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <header className="border-b border-slate-200 bg-white">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-6 py-4">
+            <Link href="/" className="text-sm font-semibold text-slate-900">
+              Dashboard
+            </Link>
+            <nav className="flex flex-wrap gap-2">
+              <Link
+                href="/pos"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              >
+                Punto de Venta
+              </Link>
+              <Link
+                href="/sales"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              >
+                Ventas
+              </Link>
+              <Link
+                href="/products"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              >
+                Productos
+              </Link>
+              <Link
+                href="/accounts"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              >
+                Clientes
+              </Link>
+              <Link
+                href="/exchange"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              >
+                Cambios
+              </Link>
+              <Link
+                href="/integrations/mercadolibre"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              >
+                Mercado Libre
+              </Link>
+            </nav>
+          </div>
+        </header>
         {children}
       </body>
     </html>
