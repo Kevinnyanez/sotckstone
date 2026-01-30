@@ -51,7 +51,7 @@
      setLoading(true);
     const { data, error } = await supabase
        .from("products")
-      .select("name, sku, barcode, price, cost_price, size, color, brand")
+      .select("name, sku, barcode, price, cost, size, color, brand")
        .eq("id", id)
        .maybeSingle();
      if (error || !data) {
@@ -65,8 +65,8 @@
        barcode: data.barcode ?? "",
        price: data.price !== null && data.price !== undefined ? String(data.price) : "",
       costPrice:
-        data.cost_price !== null && data.cost_price !== undefined
-          ? String(data.cost_price)
+        data.cost !== null && data.cost !== undefined
+          ? String(data.cost)
           : "",
        size: data.size ?? "",
        color: data.color ?? "",
@@ -96,7 +96,7 @@
         sku: form.sku.trim(),
          barcode: form.barcode.trim(),
         price: Number(form.price),
-        cost_price: form.costPrice ? Number(form.costPrice) : null,
+        cost: form.costPrice ? Number(form.costPrice) : null,
          size: form.size.trim() || null,
          color: form.color.trim() || null,
          brand: form.brand.trim() || null

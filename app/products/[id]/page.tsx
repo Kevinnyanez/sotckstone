@@ -11,7 +11,7 @@
   sku: string | null;
    barcode: string;
    price: number | null;
-  cost_price: number | null;
+  cost: number | null;
    size: string | null;
    color: string | null;
    brand: string | null;
@@ -41,7 +41,7 @@
      setLoading(true);
     const { data, error } = await supabase
        .from("products")
-      .select("id, name, sku, barcode, price, cost_price, size, color, brand")
+      .select("id, name, sku, barcode, price, cost, size, color, brand")
        .eq("id", id)
        .maybeSingle();
  
@@ -148,8 +148,8 @@
                  <div>
                   <div className="text-xs uppercase text-slate-500">Costo</div>
                    <div className="text-base text-slate-700">
-                    {product.cost_price !== null
-                      ? product.cost_price.toFixed(2)
+                    {product.cost !== null
+                      ? product.cost.toFixed(2)
                       : "N/D"}
                    </div>
                  </div>

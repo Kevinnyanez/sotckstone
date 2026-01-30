@@ -51,7 +51,7 @@
       sku: form.sku.trim(),
       barcode: form.barcode.trim(),
       price: priceValue,
-      cost_price: form.costPrice ? Number(form.costPrice) : null,
+      cost: form.costPrice ? Number(form.costPrice) : null,
       size: form.size.trim() || null,
       color: form.color.trim() || null,
       brand: form.brand.trim() || null
