@@ -96,7 +96,7 @@
         sku: form.sku.trim(),
          barcode: form.barcode.trim(),
         price: Number(form.price),
-        cost: form.costPrice ? Number(form.costPrice) : null,
+        cost: form.costPrice && Number(form.costPrice) >= 0 ? Number(form.costPrice) : 0,
          size: form.size.trim() || null,
          color: form.color.trim() || null,
          brand: form.brand.trim() || null
