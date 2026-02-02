@@ -117,24 +117,24 @@
    }
  
    return (
-     <main className="min-h-screen bg-slate-50 text-slate-900">
-       <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
-         <header className="flex flex-wrap items-center justify-between gap-3">
+     <main className="min-h-screen bg-slate-100/80 text-slate-900">
+       <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
            <div>
-             <h1 className="text-3xl font-semibold">Editar producto</h1>
-             <p className="mt-1 text-sm text-slate-500">
+             <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Editar producto</h1>
+             <p className="mt-0.5 text-sm text-slate-500">
                Actualice los datos del producto.
              </p>
            </div>
            <Link
              href={`/products/${productId}`}
-             className="text-sm font-semibold text-slate-600 hover:text-slate-900"
+             className="text-sm font-semibold text-slate-600 hover:text-teal-700"
            >
              Volver a la ficha
            </Link>
          </header>
- 
-         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+
+         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
            {loading && (
              <p className="text-sm text-slate-500">Cargando datos...</p>
            )}
@@ -145,7 +145,7 @@
                  <input
                    value={form.name}
                    onChange={(e) => updateField("name", e.target.value)}
-                   className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                   className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                    placeholder="Ej: Remera básica"
                  />
                </label>
@@ -154,7 +154,7 @@
                 <input
                   value={form.sku}
                   onChange={(e) => updateField("sku", e.target.value)}
-                  className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                   placeholder="Ej: REM-001"
                 />
               </label>
@@ -163,7 +163,7 @@
                  <input
                    value={form.barcode}
                    onChange={(e) => updateField("barcode", e.target.value)}
-                   className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                   className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                    placeholder="Ej: 7501234567890"
                  />
                </label>
@@ -174,7 +174,7 @@
                    min={0}
                    value={form.price}
                    onChange={(e) => updateField("price", e.target.value)}
-                   className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                   className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                    placeholder="0.00"
                  />
                </label>
@@ -185,7 +185,7 @@
                    min={0}
                   value={form.costPrice}
                   onChange={(e) => updateField("costPrice", e.target.value)}
-                   className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                   className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                    placeholder="0.00"
                  />
                </label>
@@ -194,7 +194,7 @@
                  <input
                    value={form.size}
                    onChange={(e) => updateField("size", e.target.value)}
-                   className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                   className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                    placeholder="Ej: M"
                  />
                </label>
@@ -203,7 +203,7 @@
                  <input
                    value={form.color}
                    onChange={(e) => updateField("color", e.target.value)}
-                   className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                   className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                    placeholder="Ej: Negro"
                  />
                </label>
@@ -212,7 +212,7 @@
                  <input
                    value={form.brand}
                    onChange={(e) => updateField("brand", e.target.value)}
-                   className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                   className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                    placeholder="Ej: Stone"
                  />
                </label>
@@ -227,11 +227,12 @@
  
            <div className="mt-6 flex flex-wrap gap-3">
              <button
+               type="button"
                onClick={handleSubmit}
                disabled={isPending || loading}
-               className="h-11 rounded-lg bg-emerald-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+               className="h-11 rounded-lg bg-teal-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300"
              >
-               {isPending ? "Guardando..." : "Guardar cambios"}
+               {isPending ? "Guardando…" : "Guardar cambios"}
              </button>
              <Link
                href={`/products/${productId}`}

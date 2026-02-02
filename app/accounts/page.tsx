@@ -94,12 +94,28 @@ export default function AccountsPage() {
     setLoading(false);
   }
 
-  const statusTone = useMemo(
+  const statusStyle = useMemo(
     () => ({
-      PROBANDO: "bg-amber-50 text-amber-700 border-amber-200",
-      DEUDA: "bg-rose-50 text-rose-700 border-rose-200",
-      CANCELADO: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      "SIN CUENTA": "bg-slate-100 text-slate-600 border-slate-200"
+      PROBANDO: {
+        border: "border-l-4 border-l-amber-500",
+        card: "bg-amber-50/50 hover:bg-amber-50/80 border-amber-100",
+        badge: "bg-amber-100 text-amber-800 border-amber-200",
+      },
+      DEUDA: {
+        border: "border-l-4 border-l-rose-500",
+        card: "bg-rose-50/50 hover:bg-rose-50/80 border-rose-100",
+        badge: "bg-rose-100 text-rose-800 border-rose-200",
+      },
+      CANCELADO: {
+        border: "border-l-4 border-l-teal-500",
+        card: "bg-teal-50/50 hover:bg-teal-50/80 border-teal-100",
+        badge: "bg-teal-100 text-teal-800 border-teal-200",
+      },
+      "SIN CUENTA": {
+        border: "border-l-4 border-l-slate-400",
+        card: "bg-white hover:bg-slate-50/80 border-slate-200",
+        badge: "bg-slate-100 text-slate-600 border-slate-200",
+      },
     }),
     []
   );
@@ -114,84 +130,149 @@ export default function AccountsPage() {
     );
   }, [items, search]);
 
+  const PAGE_SIZE = 12;
+  const [pageIndex, setPageIndex] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const paginatedItems = useMemo(
+    () =>
+      filteredItems.slice(
+        pageIndex * PAGE_SIZE,
+        pageIndex * PAGE_SIZE + PAGE_SIZE
+      ),
+    [filteredItems, pageIndex]
+  );
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [search]);
+
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+    <main className="min-h-screen bg-slate-100/80 text-slate-900">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-semibold">Clientes</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Cuentas corrientes activas y saldo disponible.
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+              Clientes
+            </h1>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Cuentas corrientes y saldo. Buscá por nombre o teléfono.
             </p>
           </div>
           <Link
             href="/accounts/new"
-            className="h-11 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            className="h-10 rounded-lg bg-teal-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
           >
             Nuevo cliente
           </Link>
         </header>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-4">
-            <label className="text-sm font-medium text-slate-700">
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
+            <label className="block text-sm font-medium text-slate-700">
               Buscar cliente
             </label>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Nombre o teléfono"
-              className="mt-2 h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              className="mt-2 h-10 w-full max-w-md rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
             />
           </div>
           {loading && (
-            <p className="text-sm text-slate-500">Cargando clientes...</p>
-          )}
-          {!loading && items.length === 0 && (
-            <p className="text-sm text-slate-500">
-              No hay clientes cargados. Cree el primero para comenzar.
-            </p>
-          )}
-          {!loading && items.length > 0 && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredItems.map((item) => (
-                <Link
-                  key={item.id}
-                  href={`/accounts/${item.id}`}
-                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                >
-                  <div className="text-sm text-slate-500">Cliente</div>
-                  <div className="mt-1 text-lg font-semibold text-slate-900">
-                    {item.fullName}
-                  </div>
-                  <div className="mt-2 text-sm text-slate-500">
-                    {item.phone ?? "Sin teléfono"}
-                  </div>
-                  <div className="mt-4 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs uppercase text-slate-500">Saldo</div>
-                      <div
-                        className={`text-xl font-semibold ${
-                          item.balance > 0 ? "text-rose-600" : "text-emerald-600"
-                        }`}
-                      >
-                        {item.balance.toFixed(2)}
-                      </div>
-                    </div>
-                    <span
-                      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone[item.status]}`}
-                    >
-                      {item.status}
-                    </span>
-                  </div>
-                </Link>
-              ))}
+            <div className="flex items-center gap-2 px-4 py-12 text-sm text-slate-500">
+              <span className="inline-block h-4 w-4 animate-pulse rounded-full bg-slate-200" />
+              Cargando clientes…
             </div>
           )}
+          {!loading && items.length === 0 && (
+            <div className="px-4 py-12 text-center text-sm text-slate-500">
+              No hay clientes cargados. Creá el primero para comenzar.
+            </div>
+          )}
+          {!loading && items.length > 0 && filteredItems.length === 0 && (
+            <div className="px-4 py-12 text-center text-sm text-slate-500">
+              Ningún cliente coincide con la búsqueda.
+            </div>
+          )}
+          {!loading && items.length > 0 && filteredItems.length > 0 && (
+            <>
+              <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-3">
+                {paginatedItems.map((item) => {
+                  const style = statusStyle[item.status];
+                  return (
+                    <Link
+                      key={item.id}
+                      href={`/accounts/${item.id}`}
+                      className={`rounded-xl border ${style.border} ${style.card} p-4 shadow-sm transition hover:shadow-md`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-base font-semibold text-slate-900">
+                            {item.fullName}
+                          </div>
+                          <div className="mt-1 text-sm text-slate-500">
+                            {item.phone ?? "Sin teléfono"}
+                          </div>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-lg border px-2 py-0.5 text-xs font-semibold ${style.badge}`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
+                      <div className="mt-4 flex items-baseline justify-between border-t border-slate-200/80 pt-3">
+                        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                          Saldo
+                        </span>
+                        <span
+                          className={`text-xl font-bold tabular-nums ${
+                            item.balance > 0 ? "text-rose-600" : "text-teal-600"
+                          }`}
+                        >
+                          {item.balance > 0 ? "+" : ""}
+                          {item.balance.toFixed(2)}
+                        </span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between gap-4 border-t border-slate-200 px-4 py-3 sm:px-5">
+                  <span className="text-xs text-slate-500">
+                    {filteredItems.length} cliente{filteredItems.length !== 1 ? "s" : ""}
+                    {totalPages > 1 && ` · Página ${pageIndex + 1} de ${totalPages}`}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+                      disabled={pageIndex === 0}
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPageIndex((p) => Math.min(totalPages - 1, p + 1))
+                      }
+                      disabled={pageIndex >= totalPages - 1}
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
           {message && (
-            <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {message}
-            </p>
+            <div className="border-t border-slate-200 px-4 py-3 sm:px-5">
+              <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {message}
+              </p>
+            </div>
           )}
         </section>
       </div>

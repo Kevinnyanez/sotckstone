@@ -503,6 +503,167 @@ export async function createSale(
   }
 }
 
+export type CancelSaleInput = { saleId: string };
+
+/** Anula una venta: revierte stock, caja y movimientos de cuenta. */
+export async function cancelSale(
+  input: CancelSaleInput
+): Promise<ActionResult<{ saleId: string }>> {
+  const rollbackOps: RollbackOp[] = [];
+
+  try {
+    const supabase = getSupabaseServerClient();
+
+    let sale: { id: string; paid_amount?: number | null; customer_id?: string | null; channel?: string | null; sale_type?: string | null; conditional_status?: string | null; payment_method?: string | null } | null = null;
+    const { data: saleWithMethod, error: saleError } = await supabase
+      .from("sales")
+      .select("id, paid_amount, payment_method, customer_id, channel, sale_type, conditional_status")
+      .eq("id", input.saleId)
+      .maybeSingle();
+    if (saleError) {
+      if (saleError.message?.includes("payment_method")) {
+        const { data: saleBasic, error: saleBasicError } = await supabase
+          .from("sales")
+          .select("id, paid_amount, customer_id, channel, sale_type, conditional_status")
+          .eq("id", input.saleId)
+          .maybeSingle();
+        if (saleBasicError) throw saleBasicError;
+        sale = saleBasic as typeof sale;
+      } else {
+        throw saleError;
+      }
+    } else {
+      sale = saleWithMethod as typeof sale;
+    }
+    if (!sale) throw new Error("Venta inexistente");
+
+    const cancelledAt = (sale as { cancelled_at?: string | null }).cancelled_at;
+    if (cancelledAt) throw new Error("La venta ya está anulada");
+
+    const saleType = sale.sale_type as SaleType | null;
+    const condStatus = sale.conditional_status as ConditionalStatus | null;
+    if (saleType === "CONDITIONAL" && condStatus === "OPEN") {
+      throw new Error("Use devolución para ventas condicionales abiertas");
+    }
+
+    const { data: items, error: itemsError } = await supabase
+      .from("sale_items")
+      .select("product_id, quantity")
+      .eq("sale_id", sale.id);
+    if (itemsError) throw itemsError;
+    if (!items?.length) throw new Error("La venta no tiene items");
+
+    const paidAmount = Number(sale.paid_amount ?? 0);
+    const paymentMethod = sale.payment_method ?? "CASH";
+    const channel = (sale.channel === "MERCADOLIBRE" ? "MERCADOLIBRE" : "LOCAL") as string;
+
+    // 1. Devolver stock
+    const stockPayload = items.map((item: { product_id: string; quantity: number }) => ({
+      product_id: item.product_id,
+      movement_type: "ADJUSTMENT",
+      quantity: item.quantity,
+      reference_type: "SALE_CANCELLATION",
+      reference_id: sale.id,
+      channel
+    }));
+    const { data: stockMovs, error: stockErr } = await supabase
+      .from("stock_movements")
+      .insert(stockPayload)
+      .select("id");
+    if (stockErr) throw stockErr;
+    rollbackOps.push({ table: "stock_movements", ids: (stockMovs ?? []).map((s: { id: string }) => s.id) });
+
+    // 2. Revertir caja (salida por el mismo monto)
+    if (paidAmount > 0) {
+      const { data: cashMovs, error: cashErr } = await supabase
+        .from("cash_movements")
+        .insert([
+          {
+            movement_type: "SALE",
+            direction: "OUT",
+            amount: paidAmount,
+            reference_type: "SALE_CANCELLATION",
+            reference_id: sale.id,
+            payment_method: paymentMethod
+          }
+        ])
+        .select("id");
+      if (cashErr) throw cashErr;
+      rollbackOps.push({ table: "cash_movements", ids: (cashMovs ?? []).map((c: { id: string }) => c.id) });
+    }
+
+    // 3. Revertir movimientos de cuenta (CONSUME_CREDIT y DEBT de esta venta)
+    if (sale.customer_id) {
+      const { data: accountRow } = await supabase
+        .from("current_accounts")
+        .select("id")
+        .eq("customer_id", sale.customer_id)
+        .maybeSingle();
+      if (accountRow?.id) {
+        const { data: movs } = await supabase
+          .from("account_movements")
+          .select("movement_type, amount")
+          .eq("account_id", accountRow.id)
+          .eq("reference_type", "SALE")
+          .eq("reference_id", sale.id);
+        let creditToReverse = 0;
+        let debtToReverse = 0;
+        for (const m of movs ?? []) {
+          const amt = Number(m.amount ?? 0);
+          if (m.movement_type === "CONSUME_CREDIT") creditToReverse += amt;
+          if (m.movement_type === "DEBT") debtToReverse += amt;
+        }
+        if (creditToReverse > 0) {
+          const { data: revCredit, error: eCredit } = await supabase
+            .from("account_movements")
+            .insert([
+              {
+                account_id: accountRow.id,
+                movement_type: "CREDIT",
+                amount: -creditToReverse,
+                reference_type: "SALE_CANCELLATION",
+                reference_id: sale.id
+              }
+            ])
+            .select("id");
+          if (eCredit) throw eCredit;
+          rollbackOps.push({ table: "account_movements", ids: (revCredit ?? []).map((a: { id: string }) => a.id) });
+        }
+        if (debtToReverse > 0) {
+          const { data: revDebt, error: eDebt } = await supabase
+            .from("account_movements")
+            .insert([
+              {
+                account_id: accountRow.id,
+                movement_type: "PAYMENT",
+                amount: -debtToReverse,
+                reference_type: "SALE_CANCELLATION",
+                reference_id: sale.id
+              }
+            ])
+            .select("id");
+          if (eDebt) throw eDebt;
+          rollbackOps.push({ table: "account_movements", ids: (revDebt ?? []).map((a: { id: string }) => a.id) });
+        }
+        const newBalance = (await getAccountBalance(accountRow.id)) || 0;
+        await updateAccountStatus(accountRow.id, newBalance);
+      }
+    }
+
+    // 4. Marcar venta como anulada
+    const { error: updateErr } = await supabase
+      .from("sales")
+      .update({ cancelled_at: new Date().toISOString() })
+      .eq("id", sale.id);
+    if (updateErr) throw updateErr;
+
+    return { ok: true, data: { saleId: sale.id } };
+  } catch (error) {
+    await rollback(rollbackOps);
+    return { ok: false, error: { message: toErrorMessage(error) } };
+  }
+}
+
 export async function createConditionalSale(
   input: CreateConditionalSaleInput
 ): Promise<ActionResult<{ saleId: string; total: number }>> {
@@ -870,6 +1031,124 @@ export async function payAccount(
     return { ok: true, data: { accountId: account.id, balance: newBalance } };
   } catch (error) {
     await rollback(rollbackOps);
+    return { ok: false, error: { message: toErrorMessage(error) } };
+  }
+}
+
+export type ReversePaymentInput = { accountMovementId: string };
+
+/** Anula un pago registrado: vuelve a sumar la deuda y saca el dinero de caja. */
+export async function reversePayment(
+  input: ReversePaymentInput
+): Promise<ActionResult<{ accountId: string; balance: number }>> {
+  const rollbackOps: RollbackOp[] = [];
+
+  try {
+    const supabase = getSupabaseServerClient();
+
+    const { data: mov, error: movError } = await supabase
+      .from("account_movements")
+      .select("id, account_id, movement_type, amount")
+      .eq("id", input.accountMovementId)
+      .maybeSingle();
+    if (movError) throw movError;
+    if (!mov) throw new Error("Movimiento inexistente");
+    if (mov.movement_type !== "PAYMENT") {
+      throw new Error("Solo se puede anular un movimiento de tipo Pago");
+    }
+    const amount = Number(mov.amount ?? 0);
+    if (amount >= 0) throw new Error("Movimiento de pago inválido");
+    const absAmount = Math.abs(amount);
+
+    const { data: accRow } = await supabase
+      .from("current_accounts")
+      .select("id")
+      .eq("id", mov.account_id)
+      .maybeSingle();
+    if (!accRow?.id) throw new Error("Cuenta inexistente");
+
+    const { data: debtMov, error: debtErr } = await supabase
+      .from("account_movements")
+      .insert([
+        {
+          account_id: mov.account_id,
+          movement_type: "DEBT",
+          amount: absAmount,
+          reference_type: "PAYMENT_REVERSAL",
+          reference_id: mov.id
+        }
+      ])
+      .select("id")
+      .single();
+    if (debtErr) throw debtErr;
+    rollbackOps.push({ table: "account_movements", ids: [debtMov.id] });
+
+    const { data: cashMov, error: cashErr } = await supabase
+      .from("cash_movements")
+      .insert([
+        {
+          movement_type: "ACCOUNT_PAYMENT",
+          direction: "OUT",
+          amount: absAmount,
+          reference_type: "PAYMENT_REVERSAL",
+          reference_id: mov.id,
+          payment_method: "CASH"
+        }
+      ])
+      .select("id")
+      .single();
+    if (cashErr) throw cashErr;
+    rollbackOps.push({ table: "cash_movements", ids: [cashMov.id] });
+
+    const newBalance = (await getAccountBalance(accRow.id)) || 0;
+    await updateAccountStatus(accRow.id, newBalance);
+
+    return { ok: true, data: { accountId: accRow.id, balance: newBalance } };
+  } catch (error) {
+    await rollback(rollbackOps);
+    return { ok: false, error: { message: toErrorMessage(error) } };
+  }
+}
+
+export type AddDebtInput = {
+  customerId: string;
+  amount: number;
+  note?: string;
+};
+
+/** Agrega una deuda manual a la cuenta del cliente (sin venta). */
+export async function addDebt(
+  input: AddDebtInput
+): Promise<ActionResult<{ accountId: string; balance: number }>> {
+  try {
+    if (!input.customerId) throw new Error("Cliente inválido");
+    if (!Number.isFinite(input.amount) || input.amount <= 0) {
+      throw new Error("El monto debe ser mayor a cero");
+    }
+
+    const accountId = await getOrCreateAccount(input.customerId);
+
+    const supabase = getSupabaseServerClient();
+    const { data: debtMov, error: debtErr } = await supabase
+      .from("account_movements")
+      .insert([
+        {
+          account_id: accountId,
+          movement_type: "DEBT",
+          amount: input.amount,
+          reference_type: "MANUAL",
+          note: input.note ?? null
+        }
+      ])
+      .select("id")
+      .single();
+    if (debtErr) throw debtErr;
+
+    const newBalance = (await getAccountBalance(accountId)) || 0;
+    await updateAccountStatus(accountId, newBalance);
+
+    return { ok: true, data: { accountId, balance: newBalance } };
+  } catch (error) {
     return { ok: false, error: { message: toErrorMessage(error) } };
   }
 }

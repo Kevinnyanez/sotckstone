@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { createMercadoLibreLink, deleteMercadoLibreLink } from "../../../lib/mercadolibre/actions";
+
+const LINKED_PAGE_SIZE = 10;
 
 type Product = {
   id: string;
@@ -34,15 +37,9 @@ export default function MercadoLibreIntegrationPage() {
   const [messageTone, setMessageTone] = useState<"error" | "success">("success");
   const [isPending, startTransition] = useTransition();
 
-  const [simulateVariationId, setSimulateVariationId] = useState("");
-  const [simulateQuantity, setSimulateQuantity] = useState(1);
-  const [simulateReferenceId, setSimulateReferenceId] = useState("");
-  const [simulateResult, setSimulateResult] = useState<{
-    stock_before: number;
-    stock_after: number;
-    quantity_sold: number;
-  } | null>(null);
-  const [simulatePending, setSimulatePending] = useState(false);
+  const [linkedFilter, setLinkedFilter] = useState("");
+  const [linkedPageIndex, setLinkedPageIndex] = useState(0);
+  const searchParams = useSearchParams();
 
   const loadProducts = useCallback(async () => {
     const { data, error } = await supabase
@@ -128,60 +125,55 @@ export default function MercadoLibreIntegrationPage() {
     });
   }
 
-  function handleSimulateSale() {
-    setMessage(null);
-    setSimulateResult(null);
-    const variationId = simulateVariationId.trim();
-    if (!variationId) {
-      showMsg("Elegí una variante vinculada o ingresá external_variation_id.", "error");
-      return;
-    }
-    setSimulatePending(true);
-    fetch("/api/simulate/mercadolibre-sale", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        external_variation_id: variationId,
-        quantity: Math.max(1, Math.floor(simulateQuantity)) || 1,
-        reference_id: simulateReferenceId.trim() || undefined
-      })
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.ok) {
-          setSimulateResult({
-            stock_before: data.stock_before,
-            stock_after: data.stock_after,
-            quantity_sold: data.quantity_sold
-          });
-          showMsg(`Venta simulada: ${data.quantity_sold} unidad(es). Stock: ${data.stock_before} → ${data.stock_after}`, "success");
-          void loadLinked();
-        } else {
-          showMsg(data.error ?? "Error al simular.", "error");
-        }
-      })
-      .catch(() => showMsg("Error de conexión.", "error"))
-      .finally(() => setSimulatePending(false));
-  }
+  const filteredLinked = useMemo(() => {
+    const term = linkedFilter.trim().toLowerCase();
+    if (!term) return linked;
+    return linked.filter(
+      (ev) =>
+        (ev.products?.name ?? "").toLowerCase().includes(term) ||
+        (ev.products?.barcode ?? "").toLowerCase().includes(term)
+    );
+  }, [linked, linkedFilter]);
+
+  const linkedTotalPages = Math.max(1, Math.ceil(filteredLinked.length / LINKED_PAGE_SIZE));
+  const paginatedLinked = useMemo(
+    () =>
+      filteredLinked.slice(
+        linkedPageIndex * LINKED_PAGE_SIZE,
+        linkedPageIndex * LINKED_PAGE_SIZE + LINKED_PAGE_SIZE
+      ),
+    [filteredLinked, linkedPageIndex]
+  );
+
+  useEffect(() => {
+    setLinkedPageIndex(0);
+  }, [linkedFilter]);
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+    <main className="min-h-screen bg-slate-100/80 text-slate-900">
+      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-semibold">Mercado Libre – Integración</h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+              Mercado Libre – Integración
+            </h1>
+            <p className="mt-0.5 text-sm text-slate-500">
               Vincular productos internos con variantes de ML (manual, sin OAuth).
             </p>
           </div>
           <Link
             href="/"
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
           >
             Volver al panel
           </Link>
         </header>
 
+        {searchParams.get("error") && (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {decodeURIComponent(searchParams.get("error") ?? "")}
+          </p>
+        )}
         {message && (
           <p
             className={`rounded-lg border px-3 py-2 text-sm ${
@@ -195,7 +187,20 @@ export default function MercadoLibreIntegrationPage() {
         )}
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">Vincular producto</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Conexión con Mercado Libre</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Conectá tu cuenta de Mercado Libre para usar la integración (OAuth).
+          </p>
+          <a
+            href="/api/mercadolibre/auth"
+            className="mt-4 inline-block rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+          >
+            Conectar Mercado Libre
+          </a>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Vincular producto</h2>
           <p className="mt-1 text-sm text-slate-500">
             Elegí un producto interno e ingresá los IDs de ML (item y variación).
           </p>
@@ -205,7 +210,7 @@ export default function MercadoLibreIntegrationPage() {
               <select
                 value={selectedProductId}
                 onChange={(e) => setSelectedProductId(e.target.value)}
-                className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
               >
                 <option value="">Seleccionar...</option>
                 {products.map((p) => (
@@ -222,7 +227,7 @@ export default function MercadoLibreIntegrationPage() {
                 value={externalItemId}
                 onChange={(e) => setExternalItemId(e.target.value)}
                 placeholder="Ej: MLB123456789"
-                className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
               />
             </div>
             <div>
@@ -232,7 +237,7 @@ export default function MercadoLibreIntegrationPage() {
                 value={externalVariationId}
                 onChange={(e) => setExternalVariationId(e.target.value)}
                 placeholder="Ej: 12345678901"
-                className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
               />
             </div>
           </div>
@@ -240,110 +245,84 @@ export default function MercadoLibreIntegrationPage() {
             type="button"
             onClick={handleCreateLink}
             disabled={isPending}
-            className="mt-4 h-10 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:bg-slate-400"
+            className="mt-4 h-10 rounded-lg bg-teal-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
             {isPending ? "Guardando..." : "Guardar vinculación"}
           </button>
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">Productos vinculados a Mercado Libre</h2>
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <h2 className="text-base font-semibold text-slate-900">Productos vinculados a Mercado Libre</h2>
           <p className="mt-1 text-sm text-slate-500">
             Lista de variantes externas asociadas a productos internos.
           </p>
           {linked.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">No hay vinculaciones aún.</p>
           ) : (
-            <ul className="mt-4 space-y-2">
-              {linked.map((ev) => (
-                <li
-                  key={ev.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50/50 px-4 py-3"
-                >
-                  <div className="text-sm">
-                    <span className="font-medium text-slate-900">
-                      {ev.products?.name ?? ev.product_id}
-                    </span>
-                    <span className="ml-2 text-slate-500">({ev.products?.barcode ?? "—"})</span>
-                    <div className="mt-1 text-xs text-slate-500">
-                      item: {ev.external_item_id} · variación: {ev.external_variation_id}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteLink(ev.id)}
-                    disabled={isPending}
-                    className="rounded border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+            <>
+              <label className="mt-4 block text-sm font-medium text-slate-700">
+                Buscar por nombre o código de barras
+              </label>
+              <input
+                type="text"
+                value={linkedFilter}
+                onChange={(e) => setLinkedFilter(e.target.value)}
+                placeholder="Filtrar..."
+                className="mt-1.5 h-10 w-full max-w-sm rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+              />
+              <ul className="mt-4 space-y-2">
+                {paginatedLinked.map((ev) => (
+                  <li
+                    key={ev.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50/50 px-4 py-3"
                   >
-                    Eliminar
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold">Simular venta Mercado Libre</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Descuenta stock como si hubiera llegado una venta de ML (para probar el flujo).
-          </p>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Variante (external_variation_id)</label>
-              <select
-                value={linked.some((ev) => ev.external_variation_id === simulateVariationId) ? simulateVariationId : ""}
-                onChange={(e) => setSimulateVariationId(e.target.value)}
-                className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              >
-                <option value="">Elegir vinculada...</option>
-                {linked.map((ev) => (
-                  <option key={ev.id} value={ev.external_variation_id}>
-                    {ev.products?.name ?? ev.product_id} — {ev.external_variation_id}
-                  </option>
+                    <div className="text-sm">
+                      <span className="font-medium text-slate-900">
+                        {ev.products?.name ?? ev.product_id}
+                      </span>
+                      <span className="ml-2 text-slate-500">({ev.products?.barcode ?? "—"})</span>
+                      <div className="mt-1 text-xs text-slate-500">
+                        item: {ev.external_item_id} · variación: {ev.external_variation_id}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteLink(ev.id)}
+                      disabled={isPending}
+                      className="rounded border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                    >
+                      Eliminar
+                    </button>
+                  </li>
                 ))}
-              </select>
-              <input
-                type="text"
-                value={simulateVariationId}
-                onChange={(e) => setSimulateVariationId(e.target.value)}
-                placeholder="O escribir external_variation_id a mano"
-                className="mt-2 h-9 w-full rounded-lg border border-slate-300 px-3 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Cantidad</label>
-              <input
-                type="number"
-                min={1}
-                value={simulateQuantity}
-                onChange={(e) => setSimulateQuantity(Number(e.target.value))}
-                className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-slate-700">reference_id (opcional)</label>
-              <input
-                type="text"
-                value={simulateReferenceId}
-                onChange={(e) => setSimulateReferenceId(e.target.value)}
-                placeholder="Ej: SIMULATED-ORDER-123"
-                className="mt-1 h-10 w-full max-w-xs rounded-lg border border-slate-300 px-3 text-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              />
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleSimulateSale}
-            disabled={simulatePending}
-            className="mt-4 h-10 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-emerald-400"
-          >
-            {simulatePending ? "Simulando..." : "Simular venta ML"}
-          </button>
-          {simulateResult && (
-            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-              Stock antes: {simulateResult.stock_before} → después: {simulateResult.stock_after} (vendido: {simulateResult.quantity_sold})
-            </div>
+              </ul>
+              {linkedTotalPages > 1 && (
+                <div className="mt-4 flex items-center justify-between gap-4 border-t border-slate-200 pt-3">
+                  <span className="text-xs text-slate-500">
+                    {filteredLinked.length} vinculación{filteredLinked.length !== 1 ? "es" : ""}
+                    {linkedTotalPages > 1 && ` · Página ${linkedPageIndex + 1} de ${linkedTotalPages}`}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setLinkedPageIndex((p) => Math.max(0, p - 1))}
+                      disabled={linkedPageIndex === 0}
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLinkedPageIndex((p) => Math.min(linkedTotalPages - 1, p + 1))}
+                      disabled={linkedPageIndex >= linkedTotalPages - 1}
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </section>
       </div>

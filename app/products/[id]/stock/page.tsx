@@ -84,66 +84,70 @@
    }
  
    return (
-     <main className="min-h-screen bg-slate-50 text-slate-900">
-       <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
-         <header className="flex flex-wrap items-center justify-between gap-3">
+     <main className="min-h-screen bg-slate-100/80 text-slate-900">
+       <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
            <div>
-             <h1 className="text-3xl font-semibold">Ajuste de stock</h1>
-             <p className="mt-1 text-sm text-slate-500">
+             <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Ajuste de stock</h1>
+             <p className="mt-0.5 text-sm text-slate-500">
                Ajuste manual del inventario para el producto seleccionado.
              </p>
            </div>
            <Link
              href={`/products/${productId}`}
-             className="text-sm font-semibold text-slate-600 hover:text-slate-900"
+             className="text-sm font-semibold text-slate-600 hover:text-teal-700"
            >
              Volver a la ficha
            </Link>
          </header>
- 
-         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+
+         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
            {loading && (
-             <p className="text-sm text-slate-500">Cargando datos...</p>
+             <div className="flex items-center gap-2 py-8 text-sm text-slate-500">
+               <span className="inline-block h-4 w-4 animate-pulse rounded-full bg-slate-200" />
+               Cargando datos…
+             </div>
            )}
            {!loading && (
              <div className="space-y-4">
-               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
-                 <div className="text-xs uppercase text-slate-500">Producto</div>
-                 <div className="mt-1 text-lg font-semibold">
+               <div className="rounded-xl border-2 border-teal-200 bg-teal-50/50 px-4 py-4">
+                 <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Producto</div>
+                 <div className="mt-1 text-lg font-semibold text-slate-900">
                    {productName || "Sin nombre"}
                  </div>
-                 <div className="mt-3 text-xs uppercase text-slate-500">
+                 <div className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-500">
                    Stock actual
                  </div>
-                 <div className="mt-1 text-2xl font-semibold">{stock}</div>
+                 <div className="mt-1 text-2xl font-bold tabular-nums text-teal-800">{stock}</div>
                </div>
- 
+
                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
                  Cantidad a ajustar (+/-)
                  <input
                    type="number"
                    value={quantity}
                    onChange={(e) => setQuantity(e.target.value)}
-                   className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                   className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                    placeholder="Ej: -2 o 5"
                  />
                </label>
              </div>
            )}
- 
+
            {message && (
              <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                {message}
              </p>
            )}
- 
+
            <div className="mt-6 flex flex-wrap gap-3">
              <button
+               type="button"
                onClick={handleSubmit}
                disabled={isPending || loading}
-               className="h-11 rounded-lg bg-emerald-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+               className="h-11 rounded-lg bg-teal-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300"
              >
-               {isPending ? "Guardando..." : "Registrar ajuste"}
+               {isPending ? "Guardando…" : "Registrar ajuste"}
              </button>
              <Link
                href={`/products/${productId}`}

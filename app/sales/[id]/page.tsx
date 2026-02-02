@@ -1,19 +1,21 @@
- "use client";
- 
- import Link from "next/link";
- import { useParams } from "next/navigation";
- import { useEffect, useState } from "react";
- import { getSupabaseClient } from "../../../lib/supabaseClient";
- 
- type SaleRow = {
-   id: string;
-   sale_date: string | null;
-   total_amount: number;
-   paid_amount: number;
-   is_fiado: boolean;
-   customer_id: string | null;
-   notes?: string | null;
- };
+"use client";
+
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
+import { cancelSale } from "../../../lib/pos";
+import { getSupabaseClient } from "../../../lib/supabaseClient";
+
+type SaleRow = {
+  id: string;
+  sale_date: string | null;
+  total_amount: number;
+  paid_amount: number;
+  is_fiado: boolean;
+  customer_id: string | null;
+  notes?: string | null;
+  cancelled_at?: string | null;
+};
  
  type SaleItemRow = {
    id: string;
@@ -56,10 +58,11 @@
    const [items, setItems] = useState<SaleItemRow[]>([]);
    const [customerName, setCustomerName] = useState<string>("Sin cliente");
    const [products, setProducts] = useState<Record<string, ProductRow>>({});
-   const [loading, setLoading] = useState(false);
-   const [message, setMessage] = useState<string | null>(null);
- 
-   useEffect(() => {
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
      if (!saleId) return;
      void loadSale(saleId);
    }, [saleId]);
@@ -68,11 +71,11 @@
      setLoading(true);
      setMessage(null);
  
-     const { data: saleData, error: saleError } = await supabase
-       .from("sales")
-       .select("id, sale_date, total_amount, paid_amount, is_fiado, customer_id, notes")
-       .eq("id", id)
-       .maybeSingle();
+    const { data: saleData, error: saleError } = await supabase
+      .from("sales")
+      .select("id, sale_date, total_amount, paid_amount, is_fiado, customer_id, notes, cancelled_at")
+      .eq("id", id)
+      .maybeSingle();
  
      if (saleError || !saleData) {
        setMessage("No se pudo cargar la venta");
@@ -119,39 +122,73 @@
      setLoading(false);
    }
  
-   const status = sale
-     ? sale.paid_amount >= sale.total_amount
-       ? "Pagada"
-       : sale.paid_amount > 0
-         ? "Parcial"
-         : sale.is_fiado
-           ? "Fiada"
-           : "Pendiente"
-     : "N/D";
- 
-   return (
-     <main className="min-h-screen bg-slate-50 text-slate-900">
-       <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
-         <header className="flex flex-wrap items-center justify-between gap-3">
+  const isCancelled = Boolean(sale?.cancelled_at);
+  const status = sale
+    ? isCancelled
+      ? "Anulada"
+      : sale.paid_amount >= sale.total_amount
+        ? "Pagada"
+        : sale.paid_amount > 0
+          ? "Parcial"
+          : sale.is_fiado
+            ? "Fiada"
+            : "Pendiente"
+    : "N/D";
+
+  function handleCancelSale() {
+    if (!saleId) return;
+    setMessage(null);
+    startTransition(async () => {
+      const result = await cancelSale({ saleId });
+      if (!result.ok) {
+        setMessage(result.error.message);
+        return;
+      }
+      setMessage("Venta anulada. Stock, caja y cuenta revertidos.");
+      void loadSale(saleId);
+    });
+  }
+
+  return (
+     <main className="min-h-screen bg-slate-100/80 text-slate-900">
+       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
            <div>
-             <h1 className="text-3xl font-semibold">Detalle de venta</h1>
-             <p className="mt-1 text-sm text-slate-500">
+             <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Detalle de venta</h1>
+             <p className="mt-0.5 text-sm text-slate-500">
                {sale?.sale_date
                  ? new Date(sale.sale_date).toLocaleString()
                  : "Fecha N/D"}
              </p>
+             {isCancelled && (
+               <span className="mt-2 inline-flex rounded border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700">
+                 Anulada
+               </span>
+             )}
            </div>
-           <Link
-             href="/sales"
-             className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-           >
-             Volver a ventas
-           </Link>
+           <div className="flex flex-wrap items-center gap-2">
+             {!loading && sale && !isCancelled && (
+               <button
+                 type="button"
+                 onClick={handleCancelSale}
+                 disabled={isPending}
+                 className="h-10 rounded-lg border border-rose-300 bg-white px-4 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:opacity-50"
+               >
+                 {isPending ? "Anulando…" : "Anular venta"}
+               </button>
+             )}
+             <Link
+               href="/sales"
+               className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+             >
+               Volver a ventas
+             </Link>
+           </div>
          </header>
- 
-         <section className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
-           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-             <h2 className="text-lg font-semibold">Resumen</h2>
+
+         <section className="mb-6 grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
+           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+             <h2 className="text-base font-semibold text-slate-900">Resumen</h2>
              {loading && <p className="mt-4 text-sm text-slate-500">Cargando...</p>}
              {!loading && sale && (
                <div className="mt-4 space-y-2 text-sm text-slate-700">
@@ -167,20 +204,20 @@
                  </div>
                  <div className="flex items-center justify-between">
                    <span>Estado</span>
-                   <span className="font-semibold">{status}</span>
+                   <span className={`font-semibold ${isCancelled ? "text-rose-600" : ""}`}>{status}</span>
                  </div>
-                 <div className="mt-3 rounded-lg bg-slate-50 px-4 py-4">
-                   <div className="text-xs uppercase text-slate-500">Total</div>
-                   <div className="mt-2 text-3xl font-semibold">
+                 <div className="mt-3 rounded-xl border-2 border-teal-200 bg-teal-50/50 px-4 py-4">
+                   <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Total</div>
+                   <div className="mt-2 text-3xl font-bold tabular-nums text-teal-800">
                      {formatARS(sale.total_amount)}
                    </div>
                  </div>
                </div>
              )}
            </div>
- 
-           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-             <h2 className="text-lg font-semibold">Pago</h2>
+
+           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+             <h2 className="text-base font-semibold text-slate-900">Pago</h2>
              {!loading && sale && (
                <div className="mt-4 space-y-2 text-sm text-slate-700">
                  <div className="flex items-center justify-between">
@@ -200,8 +237,8 @@
            </div>
          </section>
  
-         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-           <h2 className="text-lg font-semibold">Items</h2>
+         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+           <h2 className="text-base font-semibold text-slate-900">Items</h2>
            {items.length === 0 ? (
              <p className="mt-4 text-sm text-slate-500">
                No hay items registrados.
@@ -209,31 +246,31 @@
            ) : (
              <div className="mt-4 overflow-x-auto">
                <table className="w-full border-collapse text-sm">
-                 <thead className="text-left text-slate-500">
-                   <tr className="border-b border-slate-200">
-                     <th className="py-2 font-medium">Producto</th>
-                     <th className="py-2 font-medium">Código</th>
-                     <th className="py-2 text-right font-medium">Cant.</th>
-                     <th className="py-2 text-right font-medium">Precio</th>
-                     <th className="py-2 text-right font-medium">Total</th>
+                 <thead>
+                   <tr className="border-b border-slate-200 bg-slate-50/80">
+                     <th className="px-4 py-3 text-left font-medium text-slate-600">Producto</th>
+                     <th className="px-4 py-3 text-left font-medium text-slate-600">Código</th>
+                     <th className="px-4 py-3 text-right font-medium text-slate-600">Cant.</th>
+                     <th className="px-4 py-3 text-right font-medium text-slate-600">Precio</th>
+                     <th className="px-4 py-3 text-right font-medium text-slate-600">Total</th>
                    </tr>
                  </thead>
                  <tbody>
                    {items.map((item) => {
                      const product = products[item.product_id];
                      return (
-                       <tr key={item.id} className="border-b border-slate-100">
-                         <td className="py-3 font-medium">
+                       <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                         <td className="px-4 py-3 font-medium text-slate-900">
                            {product?.name ?? item.product_id}
                          </td>
-                         <td className="py-3 text-slate-500">
+                         <td className="px-4 py-3 text-slate-500">
                            {product?.barcode ?? "N/D"}
                          </td>
-                         <td className="py-3 text-right">{item.quantity}</td>
-                         <td className="py-3 text-right">
+                         <td className="px-4 py-3 text-right tabular-nums">{item.quantity}</td>
+                         <td className="px-4 py-3 text-right tabular-nums">
                            {formatARS(item.unit_price)}
                          </td>
-                         <td className="py-3 text-right font-semibold">
+                         <td className="px-4 py-3 text-right font-semibold tabular-nums">
                            {formatARS(item.total_price)}
                          </td>
                        </tr>
@@ -244,7 +281,9 @@
              </div>
            )}
            {message && (
-             <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+             <p className={`mt-4 rounded-lg border px-3 py-2 text-sm ${
+               message.includes("revertidos") ? "border-teal-200 bg-teal-50 text-teal-800" : "border-rose-200 bg-rose-50 text-rose-700"
+             }`}>
                {message}
              </p>
            )}

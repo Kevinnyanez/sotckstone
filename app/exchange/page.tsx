@@ -50,13 +50,13 @@ export default function ExchangePage() {
     differenceAmount === 0
       ? "text-slate-600"
       : differenceAmount > 0
-        ? "text-emerald-600"
+        ? "text-teal-600"
         : "text-rose-600";
   const requiresCustomer = differenceAmount < 0;
   const messageTone = message
     ? message.startsWith("Error")
       ? "border-rose-200 bg-rose-50 text-rose-700"
-      : "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : "border-teal-200 bg-teal-50 text-teal-800"
     : "";
 
   async function searchProduct(barcode: string) {
@@ -192,19 +192,21 @@ export default function ExchangePage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-3xl font-semibold">Cambios de prenda</h1>
-          <div className="text-sm text-slate-500">
-            Entradas y salidas por código
-          </div>
+    <main className="min-h-screen bg-slate-100/80 text-slate-900">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <header className="mb-6">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            Cambios de prenda
+          </h1>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Entradas y salidas por código de barras.
+          </p>
         </header>
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-6 grid gap-6 lg:grid-cols-2">
+          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Prendas que entran</h2>
+              <h2 className="text-base font-semibold text-slate-900">Prendas que entran</h2>
               <span className="text-sm text-slate-500">{totalItemsIn} items</span>
             </div>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -269,9 +271,9 @@ export default function ExchangePage() {
             )}
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Prendas que salen</h2>
+              <h2 className="text-base font-semibold text-slate-900">Prendas que salen</h2>
               <span className="text-sm text-slate-500">{totalItemsOut} items</span>
             </div>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -337,11 +339,11 @@ export default function ExchangePage() {
           </section>
         </div>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold">Diferencia</h2>
-              <p className="text-sm text-slate-500">
+              <h2 className="text-base font-semibold text-slate-900">Diferencia</h2>
+              <p className="mt-0.5 text-sm text-slate-500">
                 Calculado automáticamente según los totales.
               </p>
             </div>
@@ -370,8 +372,8 @@ export default function ExchangePage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-lg font-semibold">Cliente</h2>
+        <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <h2 className="text-base font-semibold text-slate-900">Cliente</h2>
           <p className="mt-1 text-sm text-slate-500">
             Escribí nombre o teléfono; obligatorio si hay saldo a favor.
           </p>
@@ -379,10 +381,10 @@ export default function ExchangePage() {
             value={customerQuery}
             onChange={(e) => setCustomerQuery(e.target.value)}
             placeholder="Nombre o teléfono"
-            className="mt-4 h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            className="mt-3 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
           />
           {customerResults.length > 0 && !customerId && (
-            <ul className="mt-3 space-y-2">
+            <ul className="mt-2 space-y-1 rounded-lg border border-slate-100 bg-slate-50/50">
               {customerResults.map((c) => (
                 <li key={c.id}>
                   <button
@@ -393,18 +395,18 @@ export default function ExchangePage() {
                       setCustomerQuery("");
                       setCustomerResults([]);
                     }}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    className="w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-teal-50 hover:text-slate-900"
                   >
-                    {c.full_name} {c.phone ? `(${c.phone})` : ""}
+                    {c.full_name} {c.phone ? ` · ${c.phone}` : ""}
                   </button>
                 </li>
               ))}
             </ul>
           )}
           {customerId && selectedCustomerName && (
-            <div className="mt-4 flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-              <span className="text-sm font-medium text-slate-700">
-                Cliente: <span className="font-semibold">{selectedCustomerName}</span>
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5">
+              <span className="text-sm font-medium text-slate-800">
+                <span className="font-semibold text-teal-800">{selectedCustomerName}</span>
               </span>
               <button
                 type="button"
@@ -412,7 +414,7 @@ export default function ExchangePage() {
                   setCustomerId(undefined);
                   setSelectedCustomerName(undefined);
                 }}
-                className="rounded px-2 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-200/60"
+                className="rounded px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200/60"
               >
                 Quitar
               </button>
@@ -420,11 +422,12 @@ export default function ExchangePage() {
           )}
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <button
+            type="button"
             onClick={confirmExchange}
             disabled={isPending || !hasItems}
-            className="h-12 w-full rounded-lg bg-emerald-600 text-lg font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="h-11 w-full rounded-xl bg-teal-600 py-3 text-base font-bold text-white shadow-md transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
           >
             {isPending ? "Procesando..." : "Confirmar cambio"}
           </button>

@@ -65,31 +65,31 @@
    }
  
    return (
-     <main className="min-h-screen bg-slate-50 text-slate-900">
-       <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
-         <header className="flex flex-wrap items-center justify-between gap-3">
+     <main className="min-h-screen bg-slate-100/80 text-slate-900">
+       <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
            <div>
-             <h1 className="text-3xl font-semibold">Nuevo cliente</h1>
-             <p className="mt-1 text-sm text-slate-500">
+             <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Nuevo cliente</h1>
+             <p className="mt-0.5 text-sm text-slate-500">
                Cargue los datos principales para crear la ficha.
              </p>
            </div>
            <Link
              href="/accounts"
-             className="text-sm font-semibold text-slate-600 hover:text-slate-900"
+             className="text-sm font-semibold text-slate-600 hover:text-teal-700"
            >
              Volver al listado
            </Link>
          </header>
- 
-         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+
+         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
            <div className="grid gap-4 sm:grid-cols-2">
              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
                Nombre
                <input
                  value={form.name}
                  onChange={(e) => updateField("name", e.target.value)}
-                 className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                 className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                  placeholder="Ej: María Pérez"
                />
              </label>
@@ -98,7 +98,7 @@
                <input
                  value={form.phone}
                  onChange={(e) => updateField("phone", e.target.value)}
-                 className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                 className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                  placeholder="Ej: 11 5555 0000"
                />
              </label>
@@ -108,25 +108,26 @@
                  type="email"
                  value={form.email}
                  onChange={(e) => updateField("email", e.target.value)}
-                 className="h-11 rounded-lg border border-slate-300 px-3 text-base font-normal focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                 className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                  placeholder="Ej: cliente@mail.com"
                />
              </label>
            </div>
- 
+
            {message && (
              <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                {message}
              </p>
            )}
- 
+
            <div className="mt-6 flex flex-wrap gap-3">
              <button
+               type="button"
                onClick={handleSubmit}
                disabled={isPending}
-               className="h-11 rounded-lg bg-emerald-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+               className="h-11 rounded-lg bg-teal-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300"
              >
-               {isPending ? "Guardando..." : "Crear cliente"}
+               {isPending ? "Guardando…" : "Crear cliente"}
              </button>
              <Link
                href="/accounts"

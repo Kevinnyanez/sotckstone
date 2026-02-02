@@ -1,29 +1,32 @@
 "use client";
- 
- import Link from "next/link";
+
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
- import { getSupabaseClient } from "../../lib/supabaseClient";
- 
- type ProductRow = {
-   id: string;
-   name: string;
-   barcode: string;
+import { getSupabaseClient } from "../../lib/supabaseClient";
+
+const PAGE_SIZE = 15;
+
+type ProductRow = {
+  id: string;
+  name: string;
+  barcode: string;
   price: number | null;
   color: string | null;
- };
- 
- type StockRow = {
-   product_id: string;
+};
+
+type StockRow = {
+  product_id: string;
   stock: number | null;
- };
- 
- export default function ProductsPage() {
-   const supabase = getSupabaseClient();
-   const [products, setProducts] = useState<ProductRow[]>([]);
-   const [stocks, setStocks] = useState<Record<string, number>>({});
-   const [message, setMessage] = useState<string | null>(null);
-   const [loading, setLoading] = useState<boolean>(false);
+};
+
+export default function ProductsPage() {
+  const supabase = getSupabaseClient();
+  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [stocks, setStocks] = useState<Record<string, number>>({});
+  const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
   const [search, setSearch] = useState<string>("");
+  const [pageIndex, setPageIndex] = useState(0);
  
   useEffect(() => {
     void loadProducts();
@@ -82,120 +85,186 @@ import { useEffect, useMemo, useState } from "react";
         product.barcode.toLowerCase().includes(term)
     );
   }, [products, search]);
- 
-   return (
-     <main className="min-h-screen bg-slate-50 text-slate-900">
-       <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
-         <header className="flex flex-wrap items-center justify-between gap-3">
-           <div>
-             <h1 className="text-3xl font-semibold">Productos</h1>
-             <p className="mt-1 text-sm text-slate-500">
-               Listado con stock actual y acceso rápido a la ficha.
-             </p>
-           </div>
-           <Link
-             href="/products/new"
-             className="h-11 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-           >
-             Nuevo producto
-           </Link>
-         </header>
- 
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex-1">
-              <label className="text-sm font-medium text-slate-700">
-                Buscar producto
-              </label>
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Nombre o barcode"
-                className="mt-2 h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              />
-            </div>
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
+  const paginatedProducts = useMemo(
+    () =>
+      filteredProducts.slice(
+        pageIndex * PAGE_SIZE,
+        pageIndex * PAGE_SIZE + PAGE_SIZE
+      ),
+    [filteredProducts, pageIndex]
+  );
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [search]);
+
+  return (
+    <main className="min-h-screen bg-slate-100/80 text-slate-900">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+              Productos
+            </h1>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Listado con stock actual y acceso rápido a la ficha.
+            </p>
           </div>
-           {loading && (
-             <p className="text-sm text-slate-500">Cargando productos...</p>
-           )}
-           {!loading && products.length === 0 && (
-             <p className="text-sm text-slate-500">
-               No hay productos registrados.
-             </p>
-           )}
-          {!loading && products.length > 0 && (
-             <div className="overflow-x-auto">
-               <table className="w-full border-collapse text-sm">
-                 <thead className="text-left text-slate-500">
-                   <tr className="border-b border-slate-200">
-                     <th className="py-2 font-medium">Producto</th>
-                    <th className="py-2 font-medium">Precio</th>
-                    <th className="py-2 font-medium">Color</th>
-                     <th className="py-2 text-right font-medium">Stock</th>
-                     <th className="py-2"></th>
-                   </tr>
-                 </thead>
-                 <tbody>
-                  {filteredProducts.map((product) => (
-                     <tr
-                       key={product.id}
-                       className="border-b border-slate-100"
-                     >
-                       <td className="py-3 font-medium">
-                         <Link
-                           href={`/products/${product.id}`}
-                           className="text-slate-900 hover:text-slate-700"
-                         >
-                           {product.name}
-                         </Link>
-                        <div className="text-xs text-slate-500">
-                          {product.barcode}
-                        </div>
-                       </td>
-                      <td className="py-3 text-slate-600">
-                        {product.price !== null ? product.price.toFixed(2) : "N/D"}
-                      </td>
-                      <td className="py-3">
-                        {product.color ? (
-                          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-                            {product.color}
+          <Link
+            href="/products/new"
+            className="shrink-0 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+          >
+            Nuevo producto
+          </Link>
+        </header>
+
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-4 py-3 sm:px-5">
+            <label htmlFor="products-search" className="sr-only">
+              Buscar producto
+            </label>
+            <input
+              id="products-search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Nombre o código de barras"
+              className="h-10 w-full max-w-sm rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+            />
+          </div>
+          {loading && (
+            <div className="flex items-center gap-2 px-4 py-8 text-sm text-slate-500">
+              <span className="inline-block h-4 w-4 animate-pulse rounded-full bg-slate-200" />
+              Cargando productos…
+            </div>
+          )}
+          {!loading && products.length === 0 && (
+            <div className="px-4 py-12 text-center text-sm text-slate-500">
+              No hay productos registrados.
+            </div>
+          )}
+          {!loading && products.length > 0 && filteredProducts.length === 0 && (
+            <div className="px-4 py-12 text-center text-sm text-slate-500">
+              No hay resultados para la búsqueda.
+            </div>
+          )}
+          {!loading && paginatedProducts.length > 0 && (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/80">
+                      <th className="px-4 py-3 text-left font-medium text-slate-600">
+                        Producto
+                      </th>
+                      <th className="px-4 py-3 text-right font-medium text-slate-600">
+                        Precio
+                      </th>
+                      <th className="px-4 py-3 text-left font-medium text-slate-600">
+                        Color
+                      </th>
+                      <th className="px-4 py-3 text-right font-medium text-slate-600">
+                        Stock
+                      </th>
+                      <th className="w-24 px-4 py-3 text-right font-medium text-slate-600">
+                        Acción
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedProducts.map((product) => (
+                      <tr
+                        key={product.id}
+                        className="border-b border-slate-100 hover:bg-slate-50/50"
+                      >
+                        <td className="px-4 py-3">
+                          <Link
+                            href={`/products/${product.id}`}
+                            className="font-medium text-slate-900 hover:text-teal-700"
+                          >
+                            {product.name}
+                          </Link>
+                          <div className="text-xs text-slate-500">
+                            {product.barcode}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-slate-700">
+                          {product.price !== null ? product.price.toFixed(2) : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          {product.color ? (
+                            <span className="inline-flex rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
+                              {product.color}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums font-medium">
+                          <span
+                            className={
+                              (stocks[product.id] ?? 0) > 0
+                                ? "text-teal-700"
+                                : "text-rose-600"
+                            }
+                          >
+                            {stocks[product.id] ?? 0}
                           </span>
-                        ) : (
-                          <span className="text-xs text-slate-400">Sin color</span>
-                        )}
-                      </td>
-                       <td className="py-3 text-right font-semibold">
-                        <span
-                          className={
-                            (stocks[product.id] ?? 0) > 0
-                              ? "text-emerald-600"
-                              : "text-rose-600"
-                          }
-                        >
-                          {stocks[product.id] ?? 0}
-                        </span>
-                       </td>
-                       <td className="py-3 text-right">
-                         <Link
-                           href={`/products/${product.id}`}
-                           className="text-sm font-semibold text-slate-700 hover:text-slate-900"
-                         >
-                           Ver ficha
-                         </Link>
-                       </td>
-                     </tr>
-                   ))}
-                 </tbody>
-               </table>
-             </div>
-           )}
-           {message && (
-             <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-               {message}
-             </p>
-           )}
-         </section>
-       </div>
-     </main>
-   );
- }
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Link
+                            href={`/products/${product.id}`}
+                            className="text-sm font-medium text-teal-700 hover:text-teal-800"
+                          >
+                            Ver ficha
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between gap-4 border-t border-slate-200 px-4 py-3">
+                  <span className="text-xs text-slate-500">
+                    {filteredProducts.length} producto{filteredProducts.length !== 1 ? "s" : ""}
+                    {totalPages > 1 &&
+                      ` · Página ${pageIndex + 1} de ${totalPages}`}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+                      disabled={pageIndex === 0}
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPageIndex((p) => Math.min(totalPages - 1, p + 1))
+                      }
+                      disabled={pageIndex >= totalPages - 1}
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {message && (
+            <div className="border-t border-slate-200 px-4 py-3">
+              <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {message}
+              </p>
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}

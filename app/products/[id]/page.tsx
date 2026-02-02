@@ -67,87 +67,90 @@
    }
  
    return (
-     <main className="min-h-screen bg-slate-50 text-slate-900">
-       <div className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
-         <header className="flex flex-wrap items-center justify-between gap-3">
+     <main className="min-h-screen bg-slate-100/80 text-slate-900">
+       <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
+         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
            <div>
-             <h1 className="text-3xl font-semibold">
+             <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
                {product?.name ?? "Producto"}
              </h1>
-             <p className="mt-1 text-sm text-slate-500">Ficha del producto</p>
+             <p className="mt-0.5 text-sm text-slate-500">Ficha del producto</p>
            </div>
            <div className="flex flex-wrap gap-3">
              <Link
                href={`/products/${productId}/edit`}
-               className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+               className="h-10 rounded-lg bg-teal-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
              >
                Editar producto
              </Link>
              <Link
                href={`/products/${productId}/stock`}
-               className="h-10 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+               className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
              >
                Ajustar stock
              </Link>
            </div>
          </header>
- 
-         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+
+         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
            {loading && (
-             <p className="text-sm text-slate-500">Cargando ficha...</p>
+             <div className="flex items-center gap-2 py-8 text-sm text-slate-500">
+               <span className="inline-block h-4 w-4 animate-pulse rounded-full bg-slate-200" />
+               Cargando ficha…
+             </div>
            )}
            {!loading && product && (
              <div className="grid gap-6 md:grid-cols-2">
                <div className="space-y-3">
                  <div>
-                   <div className="text-xs uppercase text-slate-500">Nombre</div>
-                   <div className="text-lg font-semibold">{product.name}</div>
+                   <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Nombre</div>
+                   <div className="text-lg font-semibold text-slate-900">{product.name}</div>
                  </div>
                 <div>
-                  <div className="text-xs uppercase text-slate-500">SKU</div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-slate-500">SKU</div>
                   <div className="text-base text-slate-700">
                     {product.sku ?? "Sin dato"}
                   </div>
                 </div>
                  <div>
-                   <div className="text-xs uppercase text-slate-500">Barcode</div>
+                   <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Barcode</div>
                    <div className="text-base text-slate-700">{product.barcode}</div>
                  </div>
                  <div>
-                   <div className="text-xs uppercase text-slate-500">Marca</div>
+                   <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Marca</div>
                    <div className="text-base text-slate-700">
                      {product.brand ?? "Sin dato"}
                    </div>
                  </div>
                  <div>
-                   <div className="text-xs uppercase text-slate-500">Color</div>
+                   <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Color</div>
                    <div className="text-base text-slate-700">
                      {product.color ?? "Sin dato"}
                    </div>
                  </div>
                  <div>
-                   <div className="text-xs uppercase text-slate-500">Talle</div>
+                   <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Talle</div>
                    <div className="text-base text-slate-700">
                      {product.size ?? "Sin dato"}
                    </div>
                  </div>
                </div>
                <div className="space-y-3">
-                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
-                   <div className="text-xs uppercase text-slate-500">Stock actual</div>
-                   <div className="mt-2 text-3xl font-semibold text-slate-900">
+                 <div className="rounded-xl border-2 border-teal-200 bg-teal-50/50 px-4 py-4">
+                   <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Stock actual</div>
+                   <div className="mt-2 text-3xl font-bold tabular-nums text-teal-800">
                      {stock}
                    </div>
                  </div>
                  <div>
-                   <div className="text-xs uppercase text-slate-500">Precio</div>
-                   <div className="text-base text-slate-700">
+                   <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Precio</div>
+                   <div className="text-base tabular-nums text-slate-700">
                      {product.price !== null ? product.price.toFixed(2) : "N/D"}
                    </div>
                  </div>
                  <div>
-                  <div className="text-xs uppercase text-slate-500">Costo</div>
-                   <div className="text-base text-slate-700">
+                  <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Costo</div>
+                   <div className="text-base tabular-nums text-slate-700">
                     {product.cost !== null
                       ? product.cost.toFixed(2)
                       : "N/D"}
@@ -165,7 +168,7 @@
  
          <Link
            href="/products"
-           className="text-sm font-semibold text-slate-600 hover:text-slate-900"
+           className="text-sm font-semibold text-slate-600 hover:text-teal-700"
          >
            Volver al listado
          </Link>

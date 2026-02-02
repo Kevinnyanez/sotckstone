@@ -10,6 +10,8 @@ type Product = {
   barcode: string;
   price: number | null;
   color?: string | null;
+  size?: string | null;
+  brand?: string | null;
   stock?: number;
 };
 
@@ -140,7 +142,7 @@ export default function PosPage() {
     setIsCatalogLoading(true);
     const { data, error } = await supabase
       .from("products")
-      .select("id, name, barcode, price, color")
+      .select("id, name, barcode, price, color, size, brand")
       .order("name", { ascending: true });
     if (error) {
       setIsCatalogLoading(false);
@@ -178,18 +180,23 @@ export default function PosPage() {
     if (!barcode.trim()) return;
     const { data, error } = await supabase
       .from("products")
-      .select("id, name, barcode, price")
-      .eq("barcode", barcode.trim())
-      .maybeSingle();
+      .select("id, name, barcode, price, color, size, brand")
+      .eq("barcode", barcode.trim());
     if (error) {
       setMessage("Error al buscar producto");
       return;
     }
-    if (!data) {
+    const matches = (data ?? []) as Product[];
+    if (matches.length === 0) {
       setMessage("Producto no encontrado");
       return;
     }
-    addItem(data);
+    if (matches.length === 1) {
+      addItem(matches[0]);
+      setBarcode("");
+      return;
+    }
+    setProductQuery(barcode.trim());
     setBarcode("");
   }
 
@@ -307,200 +314,261 @@ export default function PosPage() {
     });
   }
 
+  const PRODUCT_PAGE_SIZE = 10;
+  const [productPageIndex, setProductPageIndex] = useState(0);
+
   const filteredProducts = useMemo(() => {
     const term = productQuery.trim().toLowerCase();
-    if (!term) return catalog.slice(0, 10);
-    return catalog
-      .filter(
-        (p) =>
-          p.name.toLowerCase().includes(term) ||
-          p.barcode.toLowerCase().includes(term)
-      )
-      .slice(0, 10);
+    if (!term) return catalog;
+    return catalog.filter(
+      (p) =>
+        p.name.toLowerCase().includes(term) ||
+        p.barcode.toLowerCase().includes(term)
+    );
   }, [catalog, productQuery]);
 
+  const productTotalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_PAGE_SIZE));
+  const paginatedProducts = useMemo(
+    () =>
+      filteredProducts.slice(
+        productPageIndex * PRODUCT_PAGE_SIZE,
+        productPageIndex * PRODUCT_PAGE_SIZE + PRODUCT_PAGE_SIZE
+      ),
+    [filteredProducts, productPageIndex]
+  );
+
+  useEffect(() => {
+    setProductPageIndex(0);
+  }, [productQuery]);
+
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-3xl font-semibold">Punto de Venta</h1>
-          <div className="text-sm text-slate-500">
-            {items.length} items en la venta
+    <main className="min-h-screen bg-slate-100/80 text-slate-900">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+              Punto de Venta
+            </h1>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Escaneá o buscá productos y cobrá en un solo lugar.
+            </p>
           </div>
+          {items.length > 0 && (
+            <span className="inline-flex items-center rounded-full bg-teal-100 px-3 py-1 text-sm font-semibold text-teal-800">
+              {items.length} {items.length === 1 ? "item" : "items"}
+            </span>
+          )}
         </header>
+
+        {/* Bloque único: agregar a la venta — código + búsqueda por nombre */}
+        <section className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <h2 className="text-base font-semibold text-slate-900">
+            Agregar a la venta
+          </h2>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Código de barras o buscá por nombre y hacé clic para sumar.
+          </p>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-stretch">
+            <input
+              value={barcode}
+              onChange={(e) => setBarcode(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && searchProduct()}
+              placeholder="Código de barras"
+              autoFocus
+              className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+            />
+            <button
+              onClick={searchProduct}
+              disabled={isPending}
+              className="rounded-lg bg-teal-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              {isPending ? "Buscando…" : "Buscar por código"}
+            </button>
+          </div>
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+              O buscar por nombre
+            </label>
+            <input
+              value={productQuery}
+              onChange={(e) => setProductQuery(e.target.value)}
+              placeholder="Ej: remera, jean, 750..."
+              className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+            />
+            <div className="mt-3 max-h-52 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/50">
+              {isCatalogLoading && (
+                <p className="p-3 text-sm text-slate-500">Cargando productos…</p>
+              )}
+              {!isCatalogLoading && filteredProducts.length === 0 && (
+                <p className="p-3 text-sm text-slate-500">
+                  {productQuery.trim() ? "No hay coincidencias. Escribí nombre o código." : "Escribí para ver opciones."}
+                </p>
+              )}
+              {!isCatalogLoading &&
+                paginatedProducts.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => addItem(product)}
+                    className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-0 hover:bg-teal-50/80"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-slate-900">
+                        {product.name}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-600">
+                        Marca: {product.brand?.trim() || "—"} · Talle: {product.size?.trim() || "—"} · Color: {product.color?.trim() || "—"}
+                      </div>
+                      <div className="mt-0.5 text-xs text-slate-500">
+                        {formatARS(Number(product.price ?? 0))}
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+                      Stock {product.stock ?? 0}
+                    </span>
+                  </button>
+                ))}
+            </div>
+            {!isCatalogLoading && filteredProducts.length > PRODUCT_PAGE_SIZE && (
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="text-xs text-slate-500">
+                  {filteredProducts.length} resultado{filteredProducts.length !== 1 ? "s" : ""}
+                  {productTotalPages > 1 && ` · Página ${productPageIndex + 1} de ${productTotalPages}`}
+                </span>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setProductPageIndex((p) => Math.max(0, p - 1))}
+                    disabled={productPageIndex === 0}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProductPageIndex((p) => Math.min(productTotalPages - 1, p + 1))}
+                    disabled={productPageIndex >= productTotalPages - 1}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
 
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="flex flex-col gap-6">
-            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-lg font-semibold">Código de barras</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Escaneá o escribí el código para agregar un producto.
-              </p>
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <input
-                  value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
-                  placeholder="Código de barras"
-                  autoFocus
-                  className="h-12 w-full rounded-lg border border-slate-300 px-4 text-lg shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                />
-                <button
-                  onClick={searchProduct}
-                  disabled={isPending}
-                  className="h-12 w-full rounded-lg bg-slate-900 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 sm:w-auto"
-                >
-                  {isPending ? "Buscando..." : "Buscar"}
-                </button>
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-lg font-semibold">Buscar producto</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Filtrá por nombre o barcode y seleccioná.
-              </p>
-              <input
-                value={productQuery}
-                onChange={(e) => setProductQuery(e.target.value)}
-                placeholder="Ej: remera, jean, 750..."
-                className="mt-4 h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-              />
-              <div className="mt-4 space-y-2">
-                {isCatalogLoading && (
-                  <p className="text-sm text-slate-500">Cargando productos...</p>
-                )}
-                {!isCatalogLoading && filteredProducts.length === 0 && (
-                  <p className="text-sm text-slate-500">
-                    No hay productos que coincidan.
-                  </p>
-                )}
-                {!isCatalogLoading &&
-                  filteredProducts.map((product) => (
-                    <button
-                      key={product.id}
-                      onClick={() => addItem(product)}
-                      className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-3 text-left transition hover:bg-slate-50"
-                    >
-                      <div>
-                        <div className="text-sm font-semibold text-slate-900">
-                          {product.name}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {formatARS(Number(product.price ?? 0))}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {product.color && (
-                          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-                            {product.color}
-                          </span>
-                        )}
-                        <span className="text-xs font-semibold text-slate-700">
-                          Stock {product.stock ?? 0}
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Productos</h2>
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 sm:px-5">
+                <h2 className="text-base font-semibold text-slate-900">
+                  Tu venta
+                </h2>
                 <span className="text-sm text-slate-500">
-                  {items.length} items
+                  {items.length} {items.length === 1 ? "producto" : "productos"}
                 </span>
               </div>
               {items.length === 0 ? (
-                <p className="mt-4 text-sm text-slate-500">No hay items.</p>
-              ) : (
-                <div className="mt-4 overflow-x-auto">
-                  <table className="w-full border-collapse text-sm">
-                    <thead className="text-left text-slate-500">
-                      <tr className="border-b border-slate-200">
-                        <th className="py-2 font-medium">Producto</th>
-                        <th className="py-2 font-medium">Código</th>
-                        <th className="py-2 text-center font-medium">Cant.</th>
-                        <th className="py-2 text-right font-medium">Precio</th>
-                        <th className="py-2 text-right font-medium">Total</th>
-                        <th className="py-2"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((item) => (
-                        <tr key={item.productId} className="border-b border-slate-100">
-                          <td className="py-3 font-medium">{item.name}</td>
-                          <td className="py-3 text-slate-500">{item.barcode}</td>
-                          <td className="py-3 text-center">
-                            <input
-                              type="number"
-                              min={1}
-                              value={item.qty}
-                              onChange={(e) =>
-                                updateQty(item.productId, Number(e.target.value))
-                              }
-                              className="h-9 w-20 rounded-md border border-slate-300 px-2 text-center focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                            />
-                          </td>
-                          <td className="py-3 text-right">
-                            {item.unitPrice.toFixed(2)}
-                          </td>
-                          <td className="py-3 text-right font-medium">
-                            {(item.qty * item.unitPrice).toFixed(2)}
-                          </td>
-                          <td className="py-3 text-right">
-                            <button
-                              onClick={() => removeItem(item.productId)}
-                              className="text-sm font-semibold text-rose-600 hover:text-rose-700"
-                            >
-                              Quitar
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <div className="mt-4 space-y-2 border-t border-slate-200 pt-4 text-sm">
-                <div className="flex items-center justify-between text-slate-500">
-                  <span>Subtotal</span>
-                  <span>{formatARS(baseTotal)}</span>
-                </div>
-                {adjustmentType !== "NONE" && (
-                  <div
-                    className={`flex items-center justify-between ${
-                      adjustmentAmount < 0 ? "text-rose-600" : "text-emerald-600"
-                    }`}
-                  >
-                    <span>
-                      {adjustmentType === "DISCOUNT" ? "Descuento" : "Recargo"}
-                    </span>
-                    <span>{formatARS(adjustmentAmount)}</span>
+                <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
+                  <div className="rounded-full bg-slate-100 p-3">
+                    <span className="text-2xl text-slate-400">🛒</span>
                   </div>
-                )}
-                <div className="flex items-center justify-between text-base font-semibold text-slate-900">
-                  <span>Total</span>
-                  <span>{formatARS(totalForValidation)}</span>
+                  <p className="text-sm text-slate-500">
+                    Tu venta está vacía. Agregá productos arriba.
+                  </p>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50/80">
+                          <th className="px-4 py-3 text-left font-medium text-slate-600">Producto</th>
+                          <th className="px-4 py-3 text-left font-medium text-slate-600">Código</th>
+                          <th className="px-4 py-3 text-center font-medium text-slate-600">Cant.</th>
+                          <th className="px-4 py-3 text-right font-medium text-slate-600">Precio</th>
+                          <th className="px-4 py-3 text-right font-medium text-slate-600">Total</th>
+                          <th className="w-16 px-4 py-3"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((item) => (
+                          <tr key={item.productId} className="border-b border-slate-100 hover:bg-slate-50/50">
+                            <td className="px-4 py-3 font-medium text-slate-900">{item.name}</td>
+                            <td className="px-4 py-3 text-slate-500">{item.barcode}</td>
+                            <td className="px-4 py-3 text-center">
+                              <input
+                                type="number"
+                                min={1}
+                                value={item.qty}
+                                onChange={(e) =>
+                                  updateQty(item.productId, Number(e.target.value))
+                                }
+                                className="h-9 w-16 rounded-lg border border-slate-300 px-2 text-center text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums text-slate-600">
+                              {item.unitPrice.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-3 text-right font-medium tabular-nums text-slate-900">
+                              {(item.qty * item.unitPrice).toFixed(2)}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => removeItem(item.productId)}
+                                className="rounded px-2 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 hover:text-rose-700"
+                              >
+                                Quitar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="space-y-2 border-t border-slate-200 px-4 py-4 text-sm sm:px-5">
+                    <div className="flex items-center justify-between text-slate-600">
+                      <span>Subtotal</span>
+                      <span className="tabular-nums">{formatARS(baseTotal)}</span>
+                    </div>
+                    {adjustmentType !== "NONE" && (
+                      <div
+                        className={`flex items-center justify-between tabular-nums ${
+                          adjustmentAmount < 0 ? "text-rose-600" : "text-teal-600"
+                        }`}
+                      >
+                        <span>
+                          {adjustmentType === "DISCOUNT" ? "Descuento" : "Recargo"}
+                        </span>
+                        <span>{formatARS(adjustmentAmount)}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-base font-semibold text-slate-900">
+                      <span>Total venta</span>
+                      <span className="tabular-nums">{formatARS(totalForValidation)}</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </section>
           </div>
 
           <aside className="flex flex-col gap-6">
-            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-lg font-semibold">Cliente</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Escribí nombre o teléfono; opcional para ventas parciales o fiadas.
+            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <h2 className="text-base font-semibold text-slate-900">Cliente</h2>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Opcional. Necesario para venta parcial o fiada.
               </p>
               <input
                 value={customerQuery}
                 onChange={(e) => setCustomerQuery(e.target.value)}
                 placeholder="Nombre o teléfono"
-                className="mt-4 h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                className="mt-3 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
               />
               {customerResults.length > 0 && !customerId && (
-                <ul className="mt-3 space-y-2">
+                <ul className="mt-2 space-y-1 rounded-lg border border-slate-100 bg-slate-50/50">
                   {customerResults.map((c) => (
                     <li key={c.id}>
                       <button
@@ -511,18 +579,18 @@ export default function PosPage() {
                           setCustomerQuery("");
                           setCustomerResults([]);
                         }}
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        className="w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-teal-50 hover:text-slate-900"
                       >
-                        {c.full_name} {c.phone ? `(${c.phone})` : ""}
+                        {c.full_name} {c.phone ? ` · ${c.phone}` : ""}
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
               {customerId && selectedCustomerName && (
-                <div className="mt-4 flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-                  <span className="text-sm font-medium text-slate-700">
-                    Cliente: <span className="font-semibold">{selectedCustomerName}</span>
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2.5">
+                  <span className="text-sm font-medium text-slate-800">
+                    <span className="font-semibold text-teal-800">{selectedCustomerName}</span>
                   </span>
                   <button
                     type="button"
@@ -530,7 +598,7 @@ export default function PosPage() {
                       setCustomerId(undefined);
                       setSelectedCustomerName(undefined);
                     }}
-                    className="rounded px-2 py-1 text-sm font-semibold text-slate-600 hover:bg-slate-200/60"
+                    className="rounded px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200/60"
                   >
                     Quitar
                   </button>
@@ -538,39 +606,42 @@ export default function PosPage() {
               )}
             </section>
 
-            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-lg font-semibold">Pago</h2>
-              <div className="mt-4 grid gap-3">
-                <div className="grid gap-2 sm:grid-cols-2">
+            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <h2 className="text-base font-semibold text-slate-900">Forma de pago</h2>
+              <div className="mt-3 grid gap-3">
+                <div className="grid grid-cols-2 gap-2">
                   {paymentMethods.map((method) => (
                     <button
                       key={method.value}
                       type="button"
                       onClick={() => setPaymentMethod(method.value)}
-                      className={`h-11 rounded-lg border px-3 text-sm font-semibold transition ${
+                      className={`h-10 rounded-lg border px-3 text-sm font-semibold transition ${
                         paymentMethod === method.value
-                          ? "border-slate-900 bg-slate-900 text-white"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          ? "border-teal-600 bg-teal-600 text-white"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                       }`}
                     >
                       {method.label}
                     </button>
                   ))}
                 </div>
-                <input
-                  type="number"
-                  min={0}
-                  value={paidAmount}
-                  onChange={(e) => setPaidAmount(Number(e.target.value))}
-                  placeholder="Monto pagado"
-                  className="h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                />
-                <button
-                  onClick={setPaidToTotal}
-                  className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-                >
-                  Usar total
-                </button>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    value={paidAmount}
+                    onChange={(e) => setPaidAmount(Number(e.target.value))}
+                    placeholder="Monto pagado"
+                    className="h-10 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={setPaidToTotal}
+                    className="h-10 shrink-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Usar total
+                  </button>
+                </div>
               </div>
               {hasPaidGreaterThanTotal && (
                 <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
@@ -584,16 +655,16 @@ export default function PosPage() {
               )}
             </section>
 
-            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-lg font-semibold">Descuento / Recargo</h2>
-              <div className="mt-4 grid gap-3">
-                <div className="grid grid-cols-2 gap-2">
+            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <h2 className="text-base font-semibold text-slate-900">Descuento / Recargo</h2>
+              <div className="mt-3 grid gap-2">
+                <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => setAdjustmentType("DISCOUNT")}
-                    className={`h-10 rounded-lg border px-3 text-sm font-semibold ${
+                    className={`h-9 flex-1 rounded-lg border px-3 text-sm font-semibold transition ${
                       adjustmentType === "DISCOUNT"
-                        ? "border-rose-600 bg-rose-600 text-white"
+                        ? "border-rose-500 bg-rose-500 text-white"
                         : "border-slate-200 text-slate-600 hover:bg-slate-50"
                     }`}
                   >
@@ -602,57 +673,61 @@ export default function PosPage() {
                   <button
                     type="button"
                     onClick={() => setAdjustmentType("SURCHARGE")}
-                    className={`h-10 rounded-lg border px-3 text-sm font-semibold ${
+                    className={`h-9 flex-1 rounded-lg border px-3 text-sm font-semibold transition ${
                       adjustmentType === "SURCHARGE"
-                        ? "border-emerald-600 bg-emerald-600 text-white"
+                        ? "border-teal-500 bg-teal-500 text-white"
                         : "border-slate-200 text-slate-600 hover:bg-slate-50"
                     }`}
                   >
                     Recargo
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setAdjustmentMode("PERCENT")}
-                    className={`h-10 rounded-lg border px-3 text-sm font-semibold ${
-                      adjustmentMode === "PERCENT"
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    %
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAdjustmentMode("AMOUNT")}
-                    className={`h-10 rounded-lg border px-3 text-sm font-semibold ${
-                      adjustmentMode === "AMOUNT"
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    $
-                  </button>
-                </div>
-                <input
-                  type="number"
-                  min={0}
-                  value={adjustmentValue}
-                  onChange={(e) => setAdjustmentValue(e.target.value)}
-                  placeholder={adjustmentMode === "PERCENT" ? "Ej: 10" : "Ej: 1500"}
-                  className="h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAdjustmentType("NONE");
-                    setAdjustmentValue("");
-                  }}
-                  className="h-10 rounded-lg border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-                >
-                  Quitar ajuste
-                </button>
+                {adjustmentType !== "NONE" && (
+                  <>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAdjustmentMode("PERCENT")}
+                        className={`h-9 w-12 rounded-lg border text-sm font-semibold transition ${
+                          adjustmentMode === "PERCENT"
+                            ? "border-slate-700 bg-slate-700 text-white"
+                            : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        %
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdjustmentMode("AMOUNT")}
+                        className={`h-9 w-12 rounded-lg border text-sm font-semibold transition ${
+                          adjustmentMode === "AMOUNT"
+                            ? "border-slate-700 bg-slate-700 text-white"
+                            : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        $
+                      </button>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      value={adjustmentValue}
+                      onChange={(e) => setAdjustmentValue(e.target.value)}
+                      placeholder={adjustmentMode === "PERCENT" ? "Ej: 10" : "Ej: 1500"}
+                      className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdjustmentType("NONE");
+                        setAdjustmentValue("");
+                      }}
+                      className="h-9 w-full rounded-lg border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                    >
+                      Quitar ajuste
+                    </button>
+                  </>
+                )}
               </div>
               {hasInvalidAdjustment && (
                 <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
@@ -661,43 +736,44 @@ export default function PosPage() {
               )}
             </section>
 
-            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <section className="rounded-xl border-2 border-teal-200 bg-teal-50/50 p-4 shadow-sm sm:p-5">
               <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-500">Total venta</span>
-                  <span className="text-xl font-semibold">
+                <div className="flex items-center justify-between text-slate-600">
+                  <span className="text-sm">Total venta</span>
+                  <span className="text-lg font-semibold tabular-nums text-slate-900">
                     {formatARS(totalForValidation)}
                   </span>
                 </div>
                 {customerCredit > 0 && (
                   <>
-                    <div className="flex items-center justify-between text-sm text-emerald-700">
+                    <div className="flex items-center justify-between text-sm text-teal-700">
                       <span>Crédito a favor</span>
-                      <span className="font-semibold">-{formatARS(customerCredit)}</span>
+                      <span className="font-semibold tabular-nums">-{formatARS(customerCredit)}</span>
                     </div>
-                    <div className="flex items-center justify-between border-t border-slate-200 pt-2">
-                      <span className="text-sm text-slate-500">A cobrar (efectivo)</span>
-                      <span className="text-2xl font-semibold text-slate-900">
+                    <div className="flex items-center justify-between border-t border-teal-200 pt-3">
+                      <span className="text-sm font-medium text-slate-700">A cobrar</span>
+                      <span className="text-2xl font-bold tabular-nums text-teal-800">
                         {formatARS(totalToPayInCash)}
                       </span>
                     </div>
                   </>
                 )}
                 {customerCredit === 0 && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-500">Total a cobrar</span>
-                    <span className="text-3xl font-semibold">
+                  <div className="flex items-center justify-between border-t border-teal-200 pt-3">
+                    <span className="text-sm font-medium text-slate-700">A cobrar</span>
+                    <span className="text-2xl font-bold tabular-nums text-teal-800">
                       {formatARS(totalForValidation)}
                     </span>
                   </div>
                 )}
               </div>
               <button
+                type="button"
                 onClick={confirmSale}
                 disabled={isPending || !canConfirm}
-                className="mt-4 h-12 w-full rounded-lg bg-emerald-600 text-lg font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="mt-4 h-12 w-full rounded-xl bg-teal-600 py-3 text-base font-bold text-white shadow-md transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
               >
-                {isPending ? "Procesando..." : "Cobrar"}
+                {isPending ? "Procesando…" : "Cobrar"}
               </button>
               {message && (
                 <p className={`mt-3 rounded-lg border px-3 py-2 text-sm ${messageTone}`}>
