@@ -514,30 +514,40 @@ export async function cancelSale(
   try {
     const supabase = getSupabaseServerClient();
 
-    let sale: { id: string; paid_amount?: number | null; customer_id?: string | null; channel?: string | null; sale_type?: string | null; conditional_status?: string | null; payment_method?: string | null } | null = null;
+    type SaleRow = {
+      id: string;
+      paid_amount?: number | null;
+      customer_id?: string | null;
+      channel?: string | null;
+      sale_type?: string | null;
+      conditional_status?: string | null;
+      payment_method?: string | null;
+      cancelled_at?: string | null;
+    };
+    let sale: SaleRow | null = null;
     const { data: saleWithMethod, error: saleError } = await supabase
       .from("sales")
-      .select("id, paid_amount, payment_method, customer_id, channel, sale_type, conditional_status")
+      .select("id, paid_amount, payment_method, customer_id, channel, sale_type, conditional_status, cancelled_at")
       .eq("id", input.saleId)
       .maybeSingle();
     if (saleError) {
       if (saleError.message?.includes("payment_method")) {
         const { data: saleBasic, error: saleBasicError } = await supabase
           .from("sales")
-          .select("id, paid_amount, customer_id, channel, sale_type, conditional_status")
+          .select("id, paid_amount, customer_id, channel, sale_type, conditional_status, cancelled_at")
           .eq("id", input.saleId)
           .maybeSingle();
         if (saleBasicError) throw saleBasicError;
-        sale = saleBasic as typeof sale;
+        sale = saleBasic as SaleRow;
       } else {
         throw saleError;
       }
     } else {
-      sale = saleWithMethod as typeof sale;
+      sale = saleWithMethod as SaleRow;
     }
     if (!sale) throw new Error("Venta inexistente");
 
-    const cancelledAt = (sale as { cancelled_at?: string | null }).cancelled_at;
+    const cancelledAt = sale.cancelled_at;
     if (cancelledAt) throw new Error("La venta ya está anulada");
 
     const saleType = sale.sale_type as SaleType | null;
