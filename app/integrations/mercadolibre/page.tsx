@@ -170,9 +170,14 @@ function MercadoLibreIntegrationContent() {
         </header>
 
         {searchParams.get("error") && (
-          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            {decodeURIComponent(searchParams.get("error") ?? "")}
-          </p>
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
+            <p className="font-medium">
+              {decodeURIComponent(searchParams.get("error") ?? "")}
+            </p>
+            <p className="mt-2 text-xs text-rose-600/90">
+              Causas frecuentes: la <strong>Redirect URI</strong> en tu app de Mercado Libre debe coincidir exactamente con <code className="rounded bg-rose-100 px-1">MERCADOLIBRE_REDIRECT_URI</code> (ej. https://tu-dominio.com/api/mercadolibre/callback). La cuenta con la que autorizás debe ser <strong>administrador</strong> de la aplicación en el DevCenter de ML.
+            </p>
+          </div>
         )}
         {message && (
           <p

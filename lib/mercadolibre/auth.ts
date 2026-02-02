@@ -71,8 +71,15 @@ export async function getTokenFromCode(code: string): Promise<TokenResponse> {
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`ML OAuth token: ${res.status} ${err}`);
+    const errText = await res.text();
+    let message = `ML OAuth (${res.status}): ${errText}`;
+    try {
+      const json = JSON.parse(errText) as { message?: string; error_description?: string; error?: string };
+      message = json.message ?? json.error_description ?? json.error ?? message;
+    } catch {
+      // usar errText completo si no es JSON
+    }
+    throw new Error(message);
   }
 
   const data = (await res.json()) as TokenResponse;
