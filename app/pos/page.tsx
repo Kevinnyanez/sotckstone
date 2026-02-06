@@ -320,11 +320,14 @@ export default function PosPage() {
   const filteredProducts = useMemo(() => {
     const term = productQuery.trim().toLowerCase();
     if (!term) return catalog;
-    return catalog.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.barcode.toLowerCase().includes(term)
-    );
+    const words = term.split(/\s+/).filter(Boolean);
+    return catalog.filter((p) => {
+      const searchable = [p.name, p.barcode, p.color, p.size, p.brand]
+        .filter((v) => v != null && String(v).trim() !== "")
+        .join(" ")
+        .toLowerCase();
+      return words.every((word) => searchable.includes(word));
+    });
   }, [catalog, productQuery]);
 
   const productTotalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_PAGE_SIZE));
