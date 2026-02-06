@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { createClient } from "../../lib/supabase/browser";
 
 const links = [
   { href: "/", label: "Panel" },
@@ -17,6 +18,15 @@ const links = [
 
 export default function NavBar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleSignOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
+
   return (
     <nav className="flex flex-wrap items-center gap-1" aria-label="Principal">
       {links.map(({ href, label }) => {
@@ -38,6 +48,13 @@ export default function NavBar() {
           </Link>
         );
       })}
+      <button
+        type="button"
+        onClick={handleSignOut}
+        className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+      >
+        Cerrar sesión
+      </button>
     </nav>
   );
 }

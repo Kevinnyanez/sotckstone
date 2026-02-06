@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import NavBar from "./components/NavBar";
+import AuthLayout from "./components/AuthLayout";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,18 +28,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-6">
-            <Link
-              href="/"
-              className="shrink-0 rounded-lg px-3 py-2 text-sm font-semibold tracking-wide text-slate-900 transition hover:bg-slate-100"
-            >
-              STONE
-            </Link>
-            <NavBar />
-          </div>
-        </header>
-        {children}
+        <AuthLayout>{children}</AuthLayout>
       </body>
     </html>
   );
