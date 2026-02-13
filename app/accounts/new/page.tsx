@@ -8,13 +8,13 @@
  type CustomerFormState = {
    name: string;
    phone: string;
-   email: string;
+   address: string;
  };
  
  const initialState: CustomerFormState = {
    name: "",
    phone: "",
-   email: ""
+   address: ""
  };
  
  export default function NewCustomerPage() {
@@ -36,7 +36,7 @@
        full_name: form.name.trim(),
        phone: form.phone.trim() || null
      };
-     if (form.email.trim()) payload.email = form.email.trim();
+     if (form.address.trim()) payload.address = form.address.trim();
  
      const { data, error } = await supabase
        .from("customers")
@@ -103,13 +103,13 @@
                />
              </label>
              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700 sm:col-span-2">
-               Email (opcional)
+               Dirección (opcional)
                <input
-                 type="email"
-                 value={form.email}
-                 onChange={(e) => updateField("email", e.target.value)}
+                 type="text"
+                 value={form.address}
+                 onChange={(e) => updateField("address", e.target.value)}
                  className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
-                 placeholder="Ej: cliente@mail.com"
+                 placeholder="Ej: Av. Corrientes 1234"
                />
              </label>
            </div>

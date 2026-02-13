@@ -27,6 +27,10 @@ type AccountListItem = {
   phone: string | null;
   status: AccountRow["status"] | "SIN CUENTA";
   balance: number;
+  /** Fecha de la primera deuda activa (para contar 30 días). */
+  oldestDebtAt?: string | null;
+  /** Días restantes hasta cumplir 30 desde la primera deuda (positivo = quedan, negativo = venció). */
+  daysUntil30?: number | null;
 };
 
 export default function AccountsPage() {
@@ -82,13 +86,48 @@ export default function AccountsPage() {
       balanceMap.set(row.customer_id, row.balance ?? 0);
     }
 
-    const next: AccountListItem[] = list.map((c) => ({
-      id: c.id,
-      fullName: c.full_name,
-      phone: c.phone,
-      status: (accountMap.get(c.id)?.status ?? "SIN CUENTA") as AccountListItem["status"],
-      balance: balanceMap.get(c.id) ?? 0
-    }));
+    const accountIdsWithDebt = (accounts ?? [])
+      .filter((a) => (balanceMap.get(a.customer_id) ?? 0) > 0)
+      .map((a) => a.id);
+    let oldestDebtByAccount = new Map<string, string>();
+    if (accountIdsWithDebt.length > 0) {
+      const { data: debtRows } = await supabase
+        .from("account_movements")
+        .select("account_id, created_at")
+        .in("account_id", accountIdsWithDebt)
+        .eq("movement_type", "DEBT")
+        .gt("amount", 0)
+        .order("created_at", { ascending: true });
+      const byAccount = new Map<string, string>();
+      for (const row of (debtRows ?? []) as { account_id: string; created_at: string }[]) {
+        if (!byAccount.has(row.account_id)) byAccount.set(row.account_id, row.created_at);
+      }
+      oldestDebtByAccount = byAccount;
+    }
+
+    const now = Date.now();
+    const MS_PER_DAY = 86400000;
+    const DAYS_LIMIT = 30;
+
+    const next: AccountListItem[] = list.map((c) => {
+      const balance = balanceMap.get(c.id) ?? 0;
+      const account = accountMap.get(c.id);
+      const oldestAt = account ? oldestDebtByAccount.get(account.id) : undefined;
+      let daysUntil30: number | null = null;
+      if (oldestAt && balance > 0) {
+        const elapsed = (now - new Date(oldestAt).getTime()) / MS_PER_DAY;
+        daysUntil30 = Math.floor(DAYS_LIMIT - elapsed);
+      }
+      return {
+        id: c.id,
+        fullName: c.full_name,
+        phone: c.phone,
+        status: (account?.status ?? "SIN CUENTA") as AccountListItem["status"],
+        balance,
+        oldestDebtAt: oldestAt ?? null,
+        daysUntil30: daysUntil30 ?? null
+      };
+    });
 
     setItems(next);
     setLoading(false);
@@ -122,12 +161,23 @@ export default function AccountsPage() {
 
   const filteredItems = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return items;
-    return items.filter(
-      (item) =>
-        item.fullName.toLowerCase().includes(term) ||
-        (item.phone ?? "").toLowerCase().includes(term)
-    );
+    let list = term
+      ? items.filter(
+          (item) =>
+            item.fullName.toLowerCase().includes(term) ||
+            (item.phone ?? "").toLowerCase().includes(term)
+        )
+      : [...items];
+    list.sort((a, b) => {
+      const aDebt = a.balance > 0 ? 1 : 0;
+      const bDebt = b.balance > 0 ? 1 : 0;
+      if (aDebt !== bDebt) return bDebt - aDebt;
+      if (a.balance <= 0 && b.balance <= 0) return 0;
+      const aDays = a.daysUntil30 ?? 9999;
+      const bDays = b.daysUntil30 ?? 9999;
+      return aDays - bDays;
+    });
+    return list;
   }, [items, search]);
 
   const PAGE_SIZE = 12;
@@ -220,18 +270,29 @@ export default function AccountsPage() {
                           {item.status}
                         </span>
                       </div>
-                      <div className="mt-4 flex items-baseline justify-between border-t border-slate-200/80 pt-3">
-                        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                          Saldo
-                        </span>
-                        <span
-                          className={`text-xl font-bold tabular-nums ${
-                            item.balance > 0 ? "text-rose-600" : "text-teal-600"
-                          }`}
-                        >
-                          {item.balance > 0 ? "+" : ""}
-                          {item.balance.toFixed(2)}
-                        </span>
+                      <div className="mt-4 space-y-2 border-t border-slate-200/80 pt-3">
+                        {item.balance > 0 && item.daysUntil30 != null && (
+                          <p className="text-xs font-medium text-slate-600">
+                            {item.daysUntil30 > 0
+                              ? `Quedan ${item.daysUntil30} día${item.daysUntil30 !== 1 ? "s" : ""} para cumplir 30`
+                              : item.daysUntil30 === 0
+                                ? "Hoy cumple 30 días"
+                                : `Venció hace ${Math.abs(item.daysUntil30)} día${Math.abs(item.daysUntil30) !== 1 ? "s" : ""}`}
+                          </p>
+                        )}
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                            Saldo
+                          </span>
+                          <span
+                            className={`text-xl font-bold tabular-nums ${
+                              item.balance > 0 ? "text-rose-600" : "text-teal-600"
+                            }`}
+                          >
+                            {item.balance > 0 ? "+" : ""}
+                            {item.balance.toFixed(2)}
+                          </span>
+                        </div>
                       </div>
                     </Link>
                   );

@@ -64,6 +64,7 @@ export default function PosPage() {
   >([]);
   const [message, setMessage] = useState<string | null>(null);
   const [customerCredit, setCustomerCredit] = useState<number>(0);
+  const [debtNote, setDebtNote] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const baseTotal = useMemo(
@@ -93,6 +94,7 @@ export default function PosPage() {
   const hasPartialWithoutCustomer =
     paidAmount < totalToPayInCash && paidAmount > 0 && !customerId;
   const hasPaidGreaterThanTotal = paidAmount > totalToPayInCash;
+  const hasFiado = Boolean(customerId && totalToPayInCash > 0 && paidAmount < totalToPayInCash);
   const canConfirm =
     hasItems &&
     !hasPartialWithoutCustomer &&
@@ -294,7 +296,8 @@ export default function PosPage() {
         paidAmount,
         paymentMethod,
         customerId,
-        notes: notes || undefined
+        notes: notes || undefined,
+        debtNote: hasFiado ? (debtNote.trim() || null) : undefined
       };
       const result = await createSale(payload);
       if (!result.ok) {
@@ -308,6 +311,7 @@ export default function PosPage() {
       setCustomerId(undefined);
       setSelectedCustomerName(undefined);
       setCustomerResults([]);
+      setDebtNote("");
       setAdjustmentType("NONE");
       setAdjustmentValue("");
       setMessage(`Venta creada correctamente (#${result.data.saleId})`);
@@ -395,7 +399,7 @@ export default function PosPage() {
             <input
               value={productQuery}
               onChange={(e) => setProductQuery(e.target.value)}
-              placeholder="Ej: remera, jean, 750..."
+              placeholder="Ej: remera, jean, código..."
               className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
             />
             <div className="mt-3 max-h-52 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/50">
@@ -655,6 +659,18 @@ export default function PosPage() {
                 <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                   Seleccione un cliente para venta parcial o fiada.
                 </p>
+              )}
+              {hasFiado && (
+                <label className="mt-3 flex flex-col gap-1.5 text-sm font-medium text-slate-700">
+                  Descripción de lo fiado (opcional)
+                  <input
+                    type="text"
+                    value={debtNote}
+                    onChange={(e) => setDebtNote(e.target.value)}
+                    placeholder="Ej: Remera M, Jean 42 — aparece en la ficha del cliente"
+                    className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                  />
+                </label>
               )}
             </section>
 

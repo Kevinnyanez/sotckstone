@@ -21,6 +21,8 @@ export type CreateSaleInput = {
   paymentMethod: PaymentMethod;
   notes?: string;
   saleDate?: string;
+  /** Descripción de lo fiado (qué se llevó) para mostrar en la ficha del cliente. */
+  debtNote?: string | null;
 };
 
 export type CreateConditionalSaleInput = {
@@ -37,6 +39,8 @@ export type ConfirmConditionalSaleInput = {
   paymentMethod: PaymentMethod;
   notes?: string;
   paymentDate?: string;
+  /** Descripción de lo fiado para la ficha del cliente. */
+  debtNote?: string;
 };
 
 export type ReturnConditionalSaleInput = {
@@ -45,10 +49,13 @@ export type ReturnConditionalSaleInput = {
 
 export type PayAccountInput = {
   customerId: string;
+  /** Monto que se descuenta de la deuda. */
   amount: number;
   paymentMethod: PaymentMethod;
   notes?: string;
   paymentDate?: string;
+  /** Descuento en % (0-100). Si se indica, el cliente paga menos y ese monto es el que ingresa a caja; reportes usan ese monto. */
+  discountPercent?: number;
 };
 
 export type ExchangeItemInput = {
@@ -249,6 +256,11 @@ export async function createSale(
     const effectivePaid = input.paidAmount + creditToApply;
     const effectivePending = pending - creditToApply;
 
+    const debtNoteValue =
+      input.debtNote != null && String(input.debtNote).trim() !== ""
+        ? String(input.debtNote).trim()
+        : null;
+
     const supabase = getSupabaseServerClient();
 
     const baseSalePayload = {
@@ -369,7 +381,8 @@ export async function createSale(
                 movement_type: "DEBT",
                 amount: effectivePending,
                 reference_type: "SALE",
-                reference_id: fallbackSale.id
+                reference_id: fallbackSale.id,
+                note: debtNoteValue
               }
             ])
             .select("id");
@@ -479,7 +492,8 @@ export async function createSale(
             movement_type: "DEBT",
             amount: effectivePending,
             reference_type: "SALE",
-            reference_id: sale.id
+            reference_id: sale.id,
+            note: debtNoteValue
           }
         ])
         .select("id");
@@ -855,7 +869,10 @@ export async function confirmConditionalSale(
             movement_type: "DEBT",
             amount: pending,
             reference_type: "SALE",
-            reference_id: sale.id
+            reference_id: sale.id,
+            note: (input.debtNote != null && String(input.debtNote).trim() !== "")
+              ? String(input.debtNote).trim()
+              : null
           }
         ])
         .select("id");
@@ -998,6 +1015,20 @@ export async function payAccount(
     if (balance <= 0) throw new Error("La cuenta no tiene deuda");
     if (input.amount > balance) throw new Error("Pago mayor al saldo");
 
+    const discountPct = Number(input.discountPercent);
+    const hasDiscount = Number.isFinite(discountPct) && discountPct > 0 && discountPct < 100;
+    const cashAmount = hasDiscount
+      ? Number((input.amount * (1 - discountPct / 100)).toFixed(2))
+      : input.amount;
+
+    const paymentNoteParts = [input.notes].filter(Boolean);
+    if (hasDiscount) {
+      paymentNoteParts.push(
+        `Pagó ${input.amount}. Descuento ${discountPct}%. Total abonado: ${cashAmount.toFixed(2)}`
+      );
+    }
+    const paymentNote = paymentNoteParts.length > 0 ? paymentNoteParts.join(" | ") : null;
+
     const { data: accMovs, error: accError } = await supabase
       .from("account_movements")
       .insert([
@@ -1006,7 +1037,7 @@ export async function payAccount(
           movement_type: "PAYMENT",
           amount: -input.amount,
           reference_type: "PAYMENT",
-          note: input.notes ?? null
+          note: paymentNote
         }
       ])
       .select("id");
@@ -1016,14 +1047,16 @@ export async function payAccount(
       ids: (accMovs ?? []).map((a) => a.id)
     });
 
+    const accountMovementId = (accMovs ?? [])[0]?.id;
     const { data: cashMovs, error: cashError } = await supabase
       .from("cash_movements")
       .insert([
         {
           movement_type: "ACCOUNT_PAYMENT",
           direction: "IN",
-          amount: input.amount,
+          amount: cashAmount,
           reference_type: "PAYMENT",
+          reference_id: accountMovementId ?? null,
           note: input.notes ?? null,
           payment_method: input.paymentMethod
         }
@@ -1070,6 +1103,19 @@ export async function reversePayment(
     if (amount >= 0) throw new Error("Movimiento de pago inválido");
     const absAmount = Math.abs(amount);
 
+    let cashRow: { id: string; payment_method?: string; amount?: number } | null = null;
+    const { data: originalCash, error: cashSelectErr } = await supabase
+      .from("cash_movements")
+      .select("id, payment_method, amount")
+      .eq("reference_type", "PAYMENT")
+      .eq("reference_id", input.accountMovementId)
+      .is("reversed_at", null)
+      .limit(1)
+      .maybeSingle();
+    if (cashSelectErr) throw cashSelectErr;
+    cashRow = originalCash as { id: string; payment_method?: string; amount?: number } | null;
+    if (!cashRow?.id) throw new Error("No se encontró el movimiento de caja del pago");
+
     const { data: accRow } = await supabase
       .from("current_accounts")
       .select("id")
@@ -1093,28 +1139,23 @@ export async function reversePayment(
     if (debtErr) throw debtErr;
     rollbackOps.push({ table: "account_movements", ids: [debtMov.id] });
 
-    const { data: cashMov, error: cashErr } = await supabase
+    const { error: cashUpdateErr } = await supabase
       .from("cash_movements")
-      .insert([
-        {
-          movement_type: "ACCOUNT_PAYMENT",
-          direction: "OUT",
-          amount: absAmount,
-          reference_type: "PAYMENT_REVERSAL",
-          reference_id: mov.id,
-          payment_method: "CASH"
-        }
-      ])
-      .select("id")
-      .single();
-    if (cashErr) throw cashErr;
-    rollbackOps.push({ table: "cash_movements", ids: [cashMov.id] });
+      .update({ reversed_at: new Date().toISOString() })
+      .eq("id", cashRow.id);
+    if (cashUpdateErr) throw cashUpdateErr;
 
     const newBalance = (await getAccountBalance(accRow.id)) || 0;
     await updateAccountStatus(accRow.id, newBalance);
 
     return { ok: true, data: { accountId: accRow.id, balance: newBalance } };
   } catch (error) {
+    if (cashRow?.id) {
+      await getSupabaseServerClient()
+        .from("cash_movements")
+        .update({ reversed_at: null })
+        .eq("id", cashRow.id);
+    }
     await rollback(rollbackOps);
     return { ok: false, error: { message: toErrorMessage(error) } };
   }

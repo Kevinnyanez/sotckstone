@@ -32,7 +32,10 @@ function formatARS(value: number) {
 
 function getOriginLabel(row: CashMovementRow): string {
   if (row.movement_type === "SALE") return "Ventas";
-  if (row.movement_type === "ACCOUNT_PAYMENT") return "Pagos de deudas";
+  if (row.movement_type === "ACCOUNT_PAYMENT") {
+    if (row.reference_type === "PAYMENT_REVERSAL") return "Anulación de pago";
+    return "Pagos de deudas";
+  }
   if (row.movement_type === "ADJUSTMENT" && row.reference_type === "EXCHANGE") return "Diferencia cambios";
   return row.movement_type ?? "Otro";
 }
@@ -55,6 +58,7 @@ export default function ReportsPage() {
       .select("id, movement_type, direction, amount, reference_type, payment_method, created_at")
       .gte("created_at", start)
       .lte("created_at", end)
+      .is("reversed_at", null)
       .order("created_at", { ascending: true });
 
     if (error) {

@@ -10,7 +10,7 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
    id: string;
    full_name: string;
    phone: string | null;
-  email?: string | null;
+   address?: string | null;
  };
  
  type AccountRow = {
@@ -29,9 +29,23 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
    movement_type?: string | null;
    amount?: number | null;
    reference_type?: string | null;
+   reference_id?: string | null;
    note?: string | null;
    created_at?: string | null;
  };
+
+ function getReferenceLabel(referenceType: string | null | undefined): string {
+   if (!referenceType) return "N/D";
+   const labels: Record<string, string> = {
+     PAYMENT_REVERSAL: "Anulación de pago",
+     MANUAL: "Deuda manual",
+     PAYMENT: "Pago",
+     SALE: "Venta",
+     CREDIT: "Crédito a favor",
+     CONSUME_CREDIT: "Uso de crédito"
+   };
+   return labels[referenceType] ?? referenceType;
+ }
  
  export default function AccountDetailPage() {
    const params = useParams<{ id: string }>();
@@ -42,6 +56,8 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
    const [balance, setBalance] = useState<number>(0);
    const [movements, setMovements] = useState<MovementRow[]>([]);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentDiscountPercent, setPaymentDiscountPercent] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "OTHER">("CASH");
   const [debtAmount, setDebtAmount] = useState<string>("");
   const [debtNote, setDebtNote] = useState<string>("");
   const [message, setMessage] = useState<string | null>(null);
@@ -61,7 +77,7 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
  
     const { data: customerData, error: customerError } = await supabase
        .from("customers")
-      .select("id, full_name, phone, email")
+      .select("id, full_name, phone, address")
        .eq("id", id)
        .maybeSingle();
  
@@ -121,6 +137,16 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
     [movements]
   );
 
+  const reversedPaymentIds = useMemo(
+    () =>
+      new Set(
+        movements
+          .filter((m) => m.reference_type === "PAYMENT_REVERSAL" && m.reference_id)
+          .map((m) => m.reference_id as string)
+      ),
+    [movements]
+  );
+
   const paymentAndCreditMovements = useMemo(
     () =>
       movements.filter(
@@ -128,9 +154,10 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
           (move.movement_type === "PAYMENT" ||
             move.movement_type === "CREDIT" ||
             move.movement_type === "CONSUME_CREDIT") &&
-          (move.amount ?? 0) !== 0
+          (move.amount ?? 0) !== 0 &&
+          !(move.movement_type === "PAYMENT" && reversedPaymentIds.has(move.id))
       ),
-    [movements]
+    [movements, reversedPaymentIds]
   );
 
   const debtTotalPages = Math.max(1, Math.ceil(debtMovements.length / MOVEMENTS_PAGE_SIZE));
@@ -168,6 +195,11 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
     }
     if (parsed > balance) {
       setMessage("El monto no puede superar el saldo.");
+      return;
+    }
+    const discountPct = Number(paymentDiscountPercent);
+    if (paymentDiscountPercent.trim() !== "" && (!Number.isFinite(discountPct) || discountPct < 0 || discountPct >= 100)) {
+      setMessage("El descuento debe ser un % entre 0 y 99.");
       return;
     }
 
@@ -212,10 +244,13 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
   }
 
   async function registerPayment(amount: number) {
+    const discountPct = Number(paymentDiscountPercent);
+    const hasDiscount = Number.isFinite(discountPct) && discountPct > 0 && discountPct < 100;
     const result = await payAccount({
       customerId,
       amount,
-      paymentMethod: "CASH"
+      paymentMethod,
+      discountPercent: hasDiscount ? discountPct : undefined
     });
 
     if (!result.ok) {
@@ -224,6 +259,7 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
     }
 
     setPaymentAmount("");
+    setPaymentDiscountPercent("");
     void loadAccount(customerId);
     setMessage("Pago registrado correctamente.");
   }
@@ -258,7 +294,15 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
 
          <section className="mb-6 grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-             <h2 className="text-base font-semibold text-slate-900">Datos del cliente</h2>
+             <div className="flex flex-wrap items-center justify-between gap-2">
+               <h2 className="text-base font-semibold text-slate-900">Datos del cliente</h2>
+               <Link
+                 href={`/accounts/${customerId}/edit`}
+                 className="text-sm font-semibold text-teal-600 hover:text-teal-700"
+               >
+                 Editar datos
+               </Link>
+             </div>
              {loading && (
                <p className="mt-4 text-sm text-slate-500">Cargando...</p>
              )}
@@ -273,8 +317,8 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
                  <div className="text-base">{customer.phone ?? "Sin dato"}</div>
                </div>
                <div>
-                 <span className="text-xs uppercase text-slate-500">Email</span>
-                 <div className="text-base">{customer.email ?? "Sin dato"}</div>
+                 <span className="text-xs uppercase text-slate-500">Dirección</span>
+                 <div className="text-base">{customer.address ?? "Sin dato"}</div>
                </div>
                  <div>
                    <span className="text-xs uppercase text-slate-500">Estado</span>
@@ -315,6 +359,7 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
                      <thead className="text-left text-slate-500">
                        <tr className="border-b border-slate-200">
                          <th className="py-2 font-medium">Fecha</th>
+                         <th className="py-2 font-medium">Descripción</th>
                          <th className="py-2 font-medium">Referencia</th>
                          <th className="py-2 text-right font-medium">Monto</th>
                          <th className="py-2"></th>
@@ -328,8 +373,11 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
                                ? new Date(move.created_at).toLocaleString()
                                : "N/D"}
                            </td>
+                           <td className="py-3 text-slate-700 max-w-[200px] truncate" title={move.note ?? undefined}>
+                             {move.note ?? "—"}
+                           </td>
                            <td className="py-3 text-slate-500">
-                             {move.reference_type ?? "N/D"}
+                             {getReferenceLabel(move.reference_type)}
                            </td>
                            <td className="py-3 text-right font-semibold text-rose-700">
                              +{(move.amount ?? 0).toFixed(2)}
@@ -395,6 +443,7 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
                          <th className="py-2 font-medium">Tipo</th>
                          <th className="py-2 font-medium">Referencia</th>
                          <th className="py-2 text-right font-medium">Monto</th>
+                         <th className="py-2 font-medium">Detalle</th>
                          <th className="w-20 py-2 text-right font-medium">Acción</th>
                        </tr>
                      </thead>
@@ -414,10 +463,13 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
                                  : "Uso de crédito"}
                            </td>
                            <td className="py-3 text-slate-500">
-                             {move.reference_type ?? "N/D"}
+                             {getReferenceLabel(move.reference_type)}
                            </td>
                            <td className="py-3 text-right font-semibold tabular-nums text-teal-700">
                              {Math.abs(Number(move.amount ?? 0)).toFixed(2)}
+                           </td>
+                           <td className="py-3 max-w-[220px] text-slate-600" title={move.note ?? undefined}>
+                             {move.note ?? "—"}
                            </td>
                            <td className="py-3 text-right">
                              {move.movement_type === "PAYMENT" && (
@@ -481,9 +533,22 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
         >
           <h2 className="text-base font-semibold text-slate-900">Registrar pago</h2>
           <p className="mt-0.5 text-sm text-slate-500">
-            Ingrese el monto a registrar contra la deuda actual.
+            Monto a pagar se descuenta de la deuda. Si aplicás descuento % (ej. por pago antes de 30 días), el cliente paga menos y ese monto es el que ingresa a caja (reportes).
           </p>
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="mt-4 flex flex-wrap gap-3 sm:items-end">
+            <label className="flex w-full flex-col gap-2 text-sm font-medium text-slate-700 sm:max-w-xs">
+              Forma de pago
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value as "CASH" | "TRANSFER" | "CARD" | "OTHER")}
+                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+              >
+                <option value="CASH">Efectivo</option>
+                <option value="TRANSFER">Transferencia</option>
+                <option value="CARD">Débito</option>
+                <option value="OTHER">Crédito</option>
+              </select>
+            </label>
             <label className="flex w-full flex-col gap-2 text-sm font-medium text-slate-700 sm:max-w-xs">
               Monto a pagar
               <input
@@ -495,6 +560,26 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
                 placeholder="Ej: 1500"
               />
             </label>
+            <label className="flex w-full flex-col gap-2 text-sm font-medium text-slate-700 sm:max-w-xs">
+              Descuento % (opcional)
+              <input
+                type="number"
+                min={0}
+                max={99}
+                step={0.5}
+                value={paymentDiscountPercent}
+                onChange={(e) => setPaymentDiscountPercent(e.target.value)}
+                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                placeholder="0"
+              />
+            </label>
+            {Number(paymentAmount) > 0 && Number(paymentDiscountPercent) > 0 && Number(paymentDiscountPercent) < 100 && (
+              <p className="w-full text-sm text-slate-600 sm:max-w-xs">
+                Monto que paga el cliente (ingresa a caja): <strong className="tabular-nums">
+                  {(Number(paymentAmount) * (1 - Number(paymentDiscountPercent) / 100)).toFixed(2)}
+                </strong>
+              </p>
+            )}
             <button
               type="button"
               onClick={handleRegisterPayment}
@@ -540,13 +625,13 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
               />
             </label>
             <label className="flex w-full flex-col gap-2 text-sm font-medium text-slate-700 sm:max-w-xs">
-              Nota (opcional)
+              Descripción (qué se llevó fiado)
               <input
                 type="text"
                 value={debtNote}
                 onChange={(e) => setDebtNote(e.target.value)}
                 className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
-                placeholder="Ej: Deuda anterior"
+                placeholder="Ej: Remera M, Jean 42"
               />
             </label>
             <button

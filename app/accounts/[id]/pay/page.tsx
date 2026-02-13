@@ -1,32 +1,41 @@
- "use client";
- 
- import Link from "next/link";
- import { useParams, useRouter } from "next/navigation";
- import { useEffect, useState, useTransition } from "react";
- import { payAccount } from "../../../../lib/pos";
- import { getSupabaseClient } from "../../../../lib/supabaseClient";
- 
- type CustomerRow = {
-   id: string;
-   full_name: string;
- };
- 
- type BalanceRow = {
-   customer_id: string;
-   balance: number;
- };
- 
- export default function AccountPayPage() {
-   const params = useParams<{ id: string }>();
-   const customerId = Array.isArray(params.id) ? params.id[0] : params.id;
-   const supabase = getSupabaseClient();
-   const router = useRouter();
-   const [customer, setCustomer] = useState<CustomerRow | null>(null);
-   const [balance, setBalance] = useState<number>(0);
-   const [amount, setAmount] = useState<string>("");
-   const [message, setMessage] = useState<string | null>(null);
-   const [loading, setLoading] = useState(false);
-   const [isPending, startTransition] = useTransition();
+"use client";
+
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
+import { payAccount } from "../../../../lib/pos";
+import { getSupabaseClient } from "../../../../lib/supabaseClient";
+
+const PAYMENT_METHODS = [
+  { label: "Efectivo", value: "CASH" as const },
+  { label: "Transferencia", value: "TRANSFER" as const },
+  { label: "Débito", value: "CARD" as const },
+  { label: "Crédito", value: "OTHER" as const }
+];
+
+type CustomerRow = {
+  id: string;
+  full_name: string;
+};
+
+type BalanceRow = {
+  customer_id: string;
+  balance: number;
+};
+
+export default function AccountPayPage() {
+  const params = useParams<{ id: string }>();
+  const customerId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const supabase = getSupabaseClient();
+  const router = useRouter();
+  const [customer, setCustomer] = useState<CustomerRow | null>(null);
+  const [balance, setBalance] = useState<number>(0);
+  const [amount, setAmount] = useState<string>("");
+  const [discountPercent, setDiscountPercent] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "TRANSFER" | "CARD" | "OTHER">("CASH");
+  const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
  
    useEffect(() => {
      if (!customerId) return;
@@ -56,24 +65,35 @@
      setLoading(false);
    }
  
+   const parsedAmount = Number(amount);
+   const parsedDiscount = Number(discountPercent);
+   const hasValidDiscount = Number.isFinite(parsedDiscount) && parsedDiscount > 0 && parsedDiscount < 100;
+   const cashToCollect = hasValidDiscount && Number.isFinite(parsedAmount) && parsedAmount > 0
+     ? Number((parsedAmount * (1 - parsedDiscount / 100)).toFixed(2))
+     : null;
+
    function handleSubmit() {
      setMessage(null);
-     const parsed = Number(amount);
-     if (!Number.isFinite(parsed) || parsed <= 0) {
+     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
        setMessage("Ingrese un monto válido.");
        return;
      }
-     if (parsed > balance) {
+     if (parsedAmount > balance) {
        setMessage("El monto no puede superar el saldo.");
        return;
      }
+     if (discountPercent.trim() !== "" && (!Number.isFinite(parsedDiscount) || parsedDiscount < 0 || parsedDiscount >= 100)) {
+       setMessage("El descuento debe ser un % entre 0 y 99.");
+       return;
+     }
  
-     startTransition(async () => {
-       const result = await payAccount({
-         customerId,
-         amount: parsed,
-         paymentMethod: "CASH"
-       });
+    startTransition(async () => {
+      const result = await payAccount({
+        customerId,
+        amount: parsedAmount,
+        paymentMethod,
+        discountPercent: hasValidDiscount ? parsedDiscount : undefined
+      });
  
        if (!result.ok) {
          setMessage(`Error: ${result.error.message}`);
@@ -118,7 +138,19 @@
                  </div>
                </div>
                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                 Monto a registrar
+                 Forma de pago
+                 <select
+                   value={paymentMethod}
+                   onChange={(e) => setPaymentMethod(e.target.value as "CASH" | "TRANSFER" | "CARD" | "OTHER")}
+                   className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                 >
+                   {PAYMENT_METHODS.map((m) => (
+                     <option key={m.value} value={m.value}>{m.label}</option>
+                   ))}
+                 </select>
+               </label>
+               <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                 Monto a pagar (se descuenta de la deuda)
                  <input
                    type="number"
                    min={0}
@@ -128,6 +160,24 @@
                    placeholder="Ej: 1500"
                  />
                </label>
+               <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                 Descuento % (opcional, ej. 10 si paga antes de 30 días)
+                 <input
+                   type="number"
+                   min={0}
+                   max={99}
+                   step={0.5}
+                   value={discountPercent}
+                   onChange={(e) => setDiscountPercent(e.target.value)}
+                   className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                   placeholder="0"
+                 />
+               </label>
+               {cashToCollect != null && (
+                 <p className="text-sm text-slate-600">
+                   Monto que paga el cliente (ingresa a caja): <strong className="tabular-nums">{cashToCollect.toFixed(2)}</strong>
+                 </p>
+               )}
              </div>
            )}
 
