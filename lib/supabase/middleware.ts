@@ -30,9 +30,24 @@ export async function authMiddleware(request: NextRequest) {
     }
   );
 
-  const { data } = await supabase.auth.getClaims();
-  const user = data?.claims as { sub?: string } | undefined;
-  const userId = user?.sub;
+  let userId: string | undefined;
+  try {
+    const { data } = await supabase.auth.getClaims();
+    const user = data?.claims as { sub?: string } | undefined;
+    userId = user?.sub;
+  } catch (e) {
+    const err = e as { __isAuthError?: boolean; code?: string };
+    if (err?.__isAuthError === true || err?.code === "refresh_token_not_found") {
+      await supabase.auth.signOut();
+      if (!isPublicPath(request.nextUrl.pathname)) {
+        const loginUrl = new URL("/login", request.url);
+        loginUrl.searchParams.set("next", request.nextUrl.pathname);
+        return NextResponse.redirect(loginUrl);
+      }
+    } else {
+      throw e;
+    }
+  }
 
   if (isPublicPath(request.nextUrl.pathname)) {
     if (userId && ["/login", "/signup"].includes(request.nextUrl.pathname)) {

@@ -65,6 +65,7 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
   const [isPending, startTransition] = useTransition();
   const [isPendingDebt, setPendingDebt] = useState(false);
   const [isPendingReverse, setPendingReverse] = useState<string | null>(null);
+  const [saleProductsBySaleId, setSaleProductsBySaleId] = useState<Record<string, string>>({});
  
    useEffect(() => {
      if (!customerId) return;
@@ -108,6 +109,7 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
  
      if (!accountRow?.id) {
        setMovements([]);
+       setSaleProductsBySaleId({});
        setLoading(false);
        return;
      }
@@ -118,7 +120,45 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
        .eq("account_id", accountRow.id)
        .order("created_at", { ascending: false });
  
-     setMovements((movementData ?? []) as MovementRow[]);
+     const movementList = (movementData ?? []) as MovementRow[];
+     setMovements(movementList);
+
+     const saleIds = Array.from(
+       new Set(
+         movementList
+           .filter((m) => m.reference_type === "SALE" && m.reference_id)
+           .map((m) => m.reference_id as string)
+       )
+     );
+     if (saleIds.length > 0) {
+       const { data: itemsData } = await supabase
+         .from("sale_items")
+         .select("sale_id, product_id, quantity")
+         .in("sale_id", saleIds);
+       const items = (itemsData ?? []) as { sale_id: string; product_id: string; quantity: number }[];
+       const productIds = Array.from(new Set(items.map((i) => i.product_id)));
+       const productMap: Record<string, string> = {};
+       if (productIds.length > 0) {
+         const { data: productsData } = await supabase
+           .from("products")
+           .select("id, name")
+           .in("id", productIds);
+         for (const p of (productsData ?? []) as { id: string; name: string }[]) {
+           productMap[p.id] = p.name;
+         }
+       }
+       const bySale: Record<string, string> = {};
+       for (const saleId of saleIds) {
+         const lineItems = items
+           .filter((i) => i.sale_id === saleId)
+           .map((i) => `${i.quantity}x ${productMap[i.product_id] ?? "Producto"}`);
+         bySale[saleId] = lineItems.length > 0 ? lineItems.join(", ") : "";
+       }
+       setSaleProductsBySaleId(bySale);
+     } else {
+       setSaleProductsBySaleId({});
+     }
+ 
      setLoading(false);
    }
  
@@ -373,8 +413,14 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
                                ? new Date(move.created_at).toLocaleString()
                                : "N/D"}
                            </td>
-                           <td className="py-3 text-slate-700 max-w-[200px] truncate" title={move.note ?? undefined}>
-                             {move.note ?? "—"}
+                           <td className="py-3 text-slate-700 max-w-[280px] truncate" title={
+                             move.reference_type === "SALE" && move.reference_id && saleProductsBySaleId[move.reference_id]
+                               ? (move.note ? `${move.note} · ${saleProductsBySaleId[move.reference_id]}` : saleProductsBySaleId[move.reference_id])
+                               : (move.note ?? undefined)
+                           }>
+                             {move.reference_type === "SALE" && move.reference_id && saleProductsBySaleId[move.reference_id]
+                               ? (move.note ? `${move.note} · ${saleProductsBySaleId[move.reference_id]}` : saleProductsBySaleId[move.reference_id])
+                               : (move.note ?? "—")}
                            </td>
                            <td className="py-3 text-slate-500">
                              {getReferenceLabel(move.reference_type)}
