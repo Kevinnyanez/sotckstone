@@ -1085,6 +1085,7 @@ export async function reversePayment(
   input: ReversePaymentInput
 ): Promise<ActionResult<{ accountId: string; balance: number }>> {
   const rollbackOps: RollbackOp[] = [];
+  let cashRow: { id: string; payment_method?: string; amount?: number } | null = null;
 
   try {
     const supabase = getSupabaseServerClient();
@@ -1103,7 +1104,6 @@ export async function reversePayment(
     if (amount >= 0) throw new Error("Movimiento de pago inválido");
     const absAmount = Math.abs(amount);
 
-    let cashRow: { id: string; payment_method?: string; amount?: number } | null = null;
     const { data: originalCash, error: cashSelectErr } = await supabase
       .from("cash_movements")
       .select("id, payment_method, amount")
