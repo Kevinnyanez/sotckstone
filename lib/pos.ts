@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseServerClient } from "./supabaseServer";
+import { syncStockToMercadoLibre } from "./mercadolibre/api";
 
 type SaleChannel = "PHYSICAL" | "MERCADOLIBRE";
 type PaymentMethod = "CASH" | "TRANSFER" | "CARD" | "OTHER";
@@ -331,6 +332,17 @@ export async function createSale(
           ids: (stockMovements ?? []).map((s) => s.id)
         });
 
+        if (input.channel === "PHYSICAL") {
+          for (const item of input.items) {
+            const initial = stocks.get(item.productId) ?? 0;
+            const remaining = initial - item.qty;
+            if (remaining >= 0) {
+              // No bloqueamos la venta si falla la sincronización con ML.
+              void syncStockToMercadoLibre(item.productId, remaining);
+            }
+          }
+        }
+
         if (input.paidAmount > 0) {
           const { data: cashMovements, error: cashError } = await supabase
             .from("cash_movements")
@@ -441,6 +453,16 @@ export async function createSale(
       table: "stock_movements",
       ids: (stockMovements ?? []).map((s) => s.id)
     });
+
+    if (input.channel === "PHYSICAL") {
+      for (const item of input.items) {
+        const initial = stocks.get(item.productId) ?? 0;
+        const remaining = initial - item.qty;
+        if (remaining >= 0) {
+          void syncStockToMercadoLibre(item.productId, remaining);
+        }
+      }
+    }
 
     if (input.paidAmount > 0) {
       const { data: cashMovements, error: cashError } = await supabase
