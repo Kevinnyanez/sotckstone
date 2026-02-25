@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseServerClient } from "../../../../lib/supabaseServer";
+import { processMercadoLibreSale } from "../../../../lib/mercadolibre/processSale";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,75 +18,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = getSupabaseServerClient();
-
-    const { data: variant, error: variantError } = await supabase
-      .from("external_variants")
-      .select("product_id")
-      .eq("platform", "mercadolibre")
-      .eq("external_variation_id", externalVariationId.trim())
-      .maybeSingle();
-
-    if (variantError) {
-      return NextResponse.json(
-        { ok: false, error: variantError.message },
-        { status: 500 }
-      );
-    }
-
-    if (!variant?.product_id) {
-      return NextResponse.json(
-        { ok: false, error: "Variante no vinculada a ningún producto." },
-        { status: 404 }
-      );
-    }
-
-    const { data: movements, error: movementsError } = await supabase
-      .from("stock_movements")
-      .select("quantity")
-      .eq("product_id", variant.product_id);
-
-    if (movementsError) {
-      return NextResponse.json(
-        { ok: false, error: movementsError.message },
-        { status: 500 }
-      );
-    }
-
-    const currentStock = (movements ?? []).reduce((sum, row) => sum + Number(row.quantity ?? 0), 0);
-    if (currentStock < quantity) {
-      return NextResponse.json(
-        { ok: false, error: `Stock insuficiente. Disponible: ${currentStock}, solicitado: ${quantity}.` },
-        { status: 400 }
-      );
-    }
-
-    const { error: insertError } = await supabase.from("stock_movements").insert({
-      product_id: variant.product_id,
-      movement_type: "SALE_MERCADOLIBRE",
-      type: "OUT",
-      quantity: -quantity,
-      reference_type: "MERCADOLIBRE_ORDER",
-      reference_id: referenceId,
-      note: "Simulated Mercado Libre sale",
-      channel: "MERCADOLIBRE"
+    const result = await processMercadoLibreSale({
+      externalVariationId,
+      quantity,
+      referenceId
     });
 
-    if (insertError) {
-      return NextResponse.json(
-        { ok: false, error: insertError.message },
-        { status: 500 }
-      );
+    if (!result.ok) {
+      const status =
+        result.error === "Variante no vinculada a ningún producto."
+          ? 404
+          : result.error?.startsWith("Stock insuficiente")
+            ? 400
+            : 500;
+      return NextResponse.json({ ok: false, error: result.error }, { status });
     }
-
-    const newStock = currentStock - quantity;
 
     return NextResponse.json({
       ok: true,
-      product_id: variant.product_id,
-      quantity_sold: quantity,
-      stock_before: currentStock,
-      stock_after: newStock,
+      duplicate: result.duplicate,
+      product_id: result.product_id,
+      quantity_sold: result.quantity_sold,
+      stock_before: result.stock_before,
+      stock_after: result.stock_after,
       reference_id: referenceId
     });
   } catch (e) {
