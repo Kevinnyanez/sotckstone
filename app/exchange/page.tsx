@@ -9,6 +9,9 @@ type Product = {
   name: string;
   barcode: string;
   price: number;
+  sku?: string | null;
+  color?: string | null;
+  size?: string | null;
 };
 
 type ExchangeItemUI = {
@@ -33,6 +36,10 @@ export default function ExchangePage() {
   >([]);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [productPicker, setProductPicker] = useState<{
+    products: Product[];
+    mode: "in" | "out";
+  } | null>(null);
 
   const totalItemsIn = useMemo(() => itemsIn.length, [itemsIn]);
   const totalItemsOut = useMemo(() => itemsOut.length, [itemsOut]);
@@ -59,27 +66,46 @@ export default function ExchangePage() {
       : "border-teal-200 bg-teal-50 text-teal-800"
     : "";
 
-  async function searchProduct(barcode: string) {
+  /** Busca productos por código de barra, SKU, nombre, color o talle. Devuelve todos los que coincidan. */
+  async function searchProducts(query: string): Promise<Product[]> {
+    const q = query.trim();
+    if (!q) return [];
+    const term = `%${q}%`;
     const { data, error } = await supabase
       .from("products")
-      .select("id, name, barcode, price")
-      .eq("barcode", barcode.trim())
-      .maybeSingle();
+      .select("id, name, barcode, price, sku, color, size")
+      .or(`barcode.ilike.${term},sku.ilike.${term},name.ilike.${term},color.ilike.${term},size.ilike.${term}`)
+      .limit(50);
     if (error) throw error;
-    return data as Product | null;
+    return (data ?? []) as Product[];
+  }
+
+  function addProductToIn(product: Product) {
+    setItemsIn((prev) => addItem(prev, product));
+    setBarcodeIn("");
+    setProductPicker(null);
+  }
+
+  function addProductToOut(product: Product) {
+    setItemsOut((prev) => addItem(prev, product));
+    setBarcodeOut("");
+    setProductPicker(null);
   }
 
   async function addIn() {
     setMessage(null);
     if (!barcodeIn.trim()) return;
     try {
-      const data = await searchProduct(barcodeIn);
-      if (!data) {
+      const products = await searchProducts(barcodeIn);
+      if (products.length === 0) {
         setMessage("Producto no encontrado");
         return;
       }
-      setItemsIn((prev) => addItem(prev, data));
-      setBarcodeIn("");
+      if (products.length === 1) {
+        addProductToIn(products[0]);
+        return;
+      }
+      setProductPicker({ products, mode: "in" });
     } catch {
       setMessage("Error al buscar producto");
     }
@@ -89,13 +115,16 @@ export default function ExchangePage() {
     setMessage(null);
     if (!barcodeOut.trim()) return;
     try {
-      const data = await searchProduct(barcodeOut);
-      if (!data) {
+      const products = await searchProducts(barcodeOut);
+      if (products.length === 0) {
         setMessage("Producto no encontrado");
         return;
       }
-      setItemsOut((prev) => addItem(prev, data));
-      setBarcodeOut("");
+      if (products.length === 1) {
+        addProductToOut(products[0]);
+        return;
+      }
+      setProductPicker({ products, mode: "out" });
     } catch {
       setMessage("Error al buscar producto");
     }
@@ -199,7 +228,7 @@ export default function ExchangePage() {
             Cambios de prenda
           </h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            Entradas y salidas por código de barras.
+            Entradas y salidas. Buscá por código de barras, SKU, nombre, color o talle.
           </p>
         </header>
 
@@ -213,7 +242,7 @@ export default function ExchangePage() {
               <input
                 value={barcodeIn}
                 onChange={(e) => setBarcodeIn(e.target.value)}
-                placeholder="Código de barras"
+                placeholder="Código, SKU, nombre, color o talle"
                 className="h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
               />
               <button
@@ -280,7 +309,7 @@ export default function ExchangePage() {
               <input
                 value={barcodeOut}
                 onChange={(e) => setBarcodeOut(e.target.value)}
-                placeholder="Código de barras"
+                placeholder="Código, SKU, nombre, color o talle"
                 className="h-11 w-full rounded-lg border border-slate-300 px-3 text-base focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
               />
               <button
@@ -447,6 +476,70 @@ export default function ExchangePage() {
             </p>
           )}
         </section>
+
+        {productPicker && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+            onClick={() => setProductPicker(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-picker-title"
+          >
+            <div
+              className="max-h-[85vh] w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <h2 id="product-picker-title" className="text-base font-semibold text-slate-900">
+                  Varios productos con ese criterio
+                </h2>
+                <p className="mt-0.5 text-sm text-slate-500">
+                  Elegí el artículo que querés {productPicker.mode === "in" ? "agregar a entradas" : "agregar a salidas"}.
+                </p>
+              </div>
+              <ul className="max-h-[60vh] overflow-y-auto p-2">
+                {productPicker.products.map((p) => (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        productPicker.mode === "in"
+                          ? addProductToIn(p)
+                          : addProductToOut(p)
+                      }
+                      className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-3 text-left transition hover:bg-teal-50 hover:border-teal-200"
+                    >
+                      <div>
+                        <div className="font-medium text-slate-900">{p.name}</div>
+                        <div className="flex flex-wrap gap-x-2 gap-y-0 text-xs text-slate-500">
+                          {p.barcode && <span>Cód: {p.barcode}</span>}
+                          {p.sku && <span>SKU: {p.sku}</span>}
+                          {p.color && <span>{p.color}</span>}
+                          {p.size && <span>Talle: {p.size}</span>}
+                        </div>
+                        <div className="text-xs font-semibold text-slate-600">
+                          ${p.price.toFixed(2)} c/u
+                        </div>
+                      </div>
+                      <span className="rounded bg-teal-600 px-3 py-1.5 text-sm font-medium text-white">
+                        Traer este
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="border-t border-slate-200 bg-slate-50 px-4 py-2">
+                <button
+                  type="button"
+                  onClick={() => setProductPicker(null)}
+                  className="text-sm font-medium text-slate-600 hover:text-slate-900"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
