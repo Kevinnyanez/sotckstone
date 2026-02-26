@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "../../../../lib/supabaseServer";
 import { getValidAccessToken } from "../../../../lib/mercadolibre/auth";
 import { processMercadoLibreSale } from "../../../../lib/mercadolibre/processSale";
+import { upsertMercadoLibreItemWithVariants, MercadoLibreItemResponse } from "../../../../lib/mercadolibre/itemsSync";
 
 type WebhookPayload = {
   topic?: string;
@@ -25,6 +26,13 @@ function parseOrderIdFromResource(resource: string | undefined, resourceId: stri
   if (resourceId && String(resourceId).trim()) return String(resourceId).trim();
   if (!resource || typeof resource !== "string") return null;
   const match = resource.match(/\/orders\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+function parseItemIdFromResource(resource: string | undefined, resourceId: string | undefined): string | null {
+  if (resourceId && String(resourceId).trim()) return String(resourceId).trim();
+  if (!resource || typeof resource !== "string") return null;
+  const match = resource.match(/\/items\/([^?]+)/);
   return match ? match[1] : null;
 }
 
@@ -59,6 +67,58 @@ export async function POST(request: NextRequest) {
         webhook_user_id: webhookUserId,
         stored_user_id: storedUserId
       });
+      return NextResponse.json({}, { status: 200 });
+    }
+
+    if (topic === "items") {
+      const itemId = parseItemIdFromResource(resource, resourceId);
+      if (!itemId) {
+        console.warn("[webhook ML] No se pudo extraer item_id de resource/resource_id", {
+          resource,
+          resource_id: resourceId
+        });
+        return NextResponse.json({}, { status: 200 });
+      }
+
+      const accessToken = await getValidAccessToken();
+      if (!accessToken) {
+        console.error("[webhook ML] No hay access_token válido para consultar el item", {
+          item_id: itemId
+        });
+        return NextResponse.json({}, { status: 200 });
+      }
+
+      const itemRes = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (!itemRes.ok) {
+        console.error("[webhook ML] Error al consultar item", {
+          item_id: itemId,
+          status: itemRes.status
+        });
+        return NextResponse.json({}, { status: 200 });
+      }
+
+      const item = (await itemRes.json()) as MercadoLibreItemResponse;
+      try {
+        const result = await upsertMercadoLibreItemWithVariants(item);
+        console.log("[webhook ML] Item sincronizado", {
+          item_id: item.id,
+          item_inserted: result.itemInserted,
+          item_updated: result.itemUpdated,
+          total_variants: result.totalVariants,
+          variants_inserted: result.variantsInserted,
+          variants_updated: result.variantsUpdated
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[webhook ML] Error al upsert item/variantes", {
+          item_id: item.id,
+          error: msg
+        });
+      }
+
       return NextResponse.json({}, { status: 200 });
     }
 

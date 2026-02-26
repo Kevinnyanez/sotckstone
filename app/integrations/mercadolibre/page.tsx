@@ -49,6 +49,15 @@ function MercadoLibreIntegrationContent() {
     updatedAt?: string | null;
     error?: string;
   } | null>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncSummary, setSyncSummary] = useState<{
+    total_items: number;
+    total_variants: number;
+    inserted?: { items: number; variants: number };
+    updated?: { items: number; variants: number };
+    used_public_search?: boolean;
+  } | null>(null);
 
   const loadProducts = useCallback(async () => {
     const { data, error } = await supabase
@@ -110,6 +119,33 @@ function MercadoLibreIntegrationContent() {
   function showMsg(text: string, tone: "error" | "success") {
     setMessage(text);
     setMessageTone(tone);
+  }
+
+  async function handleSyncItems() {
+    setSyncError(null);
+    setSyncSummary(null);
+    setSyncLoading(true);
+    try {
+      const res = await fetch("/api/mercadolibre/sync-items", {
+        method: "POST"
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setSyncError(data?.error ?? "No se pudo sincronizar publicaciones.");
+        return;
+      }
+      setSyncSummary({
+        total_items: data.total_items ?? 0,
+        total_variants: data.total_variants ?? 0,
+        inserted: data.inserted,
+        updated: data.updated,
+        used_public_search: data.used_public_search
+      });
+    } catch {
+      setSyncError("No se pudo sincronizar publicaciones.");
+    } finally {
+      setSyncLoading(false);
+    }
   }
 
   function handleCreateLink() {
@@ -182,15 +218,23 @@ function MercadoLibreIntegrationContent() {
               Mercado Libre – Integración
             </h1>
             <p className="mt-0.5 text-sm text-slate-500">
-              Vincular productos internos con variantes de ML (manual, sin OAuth).
+              Conectá tu cuenta, sincronizá publicaciones y vinculá variantes con tus productos internos.
             </p>
           </div>
-          <Link
-            href="/"
-            className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-          >
-            Volver al panel
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/integrations/mercadolibre/publications"
+              className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Ver publicaciones
+            </Link>
+            <Link
+              href="/"
+              className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Volver al panel
+            </Link>
+          </div>
         </header>
 
         {searchParams.get("error") && (
@@ -213,6 +257,38 @@ function MercadoLibreIntegrationContent() {
           >
             {message}
           </p>
+        )}
+
+        {(syncError || syncSummary) && (
+          <div
+            className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
+              syncError
+                ? "border-rose-200 bg-rose-50 text-rose-700"
+                : "border-emerald-200 bg-emerald-50 text-emerald-800"
+            }`}
+          >
+            {syncError && <p className="font-medium">{syncError}</p>}
+            {syncSummary && !syncError && (
+              <div>
+                <p className="font-semibold">Sincronización completada.</p>
+                <p className="mt-1">
+                  Publicaciones: <span className="font-medium">{syncSummary.total_items}</span> · Variantes:{" "}
+                  <span className="font-medium">{syncSummary.total_variants}</span>
+                </p>
+                {(syncSummary.inserted || syncSummary.updated) && (
+                  <p className="mt-1 text-xs text-emerald-900/80">
+                    Nuevos: {syncSummary.inserted?.items ?? 0} items / {syncSummary.inserted?.variants ?? 0} variantes ·
+                    Actualizados: {syncSummary.updated?.items ?? 0} items / {syncSummary.updated?.variants ?? 0} variantes
+                  </p>
+                )}
+                {syncSummary.used_public_search && (
+                  <p className="mt-1 text-xs text-amber-800">
+                    Se usó búsqueda pública (solo publicaciones activas). Para listar todas las publicaciones, configurá el permiso de lectura en el DevCenter de Mercado Libre y volvé a conectar la cuenta.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {configStatus && (
@@ -271,6 +347,14 @@ function MercadoLibreIntegrationContent() {
                   >
                     Abrir flujo OAuth en nueva pestaña
                   </a>
+                  <button
+                    type="button"
+                    onClick={handleSyncItems}
+                    disabled={syncLoading}
+                    className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  >
+                    {syncLoading ? "Sincronizando..." : "Sincronizar publicaciones ahora"}
+                  </button>
                 </div>
                 <ol className="list-inside list-decimal space-y-1 text-slate-600">
                   <li>Clic en el botón de arriba.</li>
