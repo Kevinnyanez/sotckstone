@@ -240,7 +240,9 @@ export async function syncAllItemsForCurrentUser(): Promise<{
         }
         const json = (await res.json()) as SearchResult;
         const raw = json.results ?? [];
-        const itemIds = raw.map((r) => (typeof r === "string" ? r : r.id));
+        const itemIds = raw
+          .map((r) => (typeof r === "string" ? r : (r && typeof r === "object" && (r as { id?: string }).id) ?? null))
+          .filter((id): id is string => Boolean(id));
         return {
           itemIds,
           total: json.paging?.total
@@ -255,7 +257,9 @@ export async function syncAllItemsForCurrentUser(): Promise<{
       if (!res.ok) throw new Error(`ML items search ${res.status}`);
       const json = (await res.json()) as SearchResult;
       const raw = json.results ?? [];
-      const itemIds = raw.map((r) => (typeof r === "string" ? r : r.id));
+      const itemIds = raw
+        .map((r) => (typeof r === "string" ? r : (r && typeof r === "object" && (r as { id?: string }).id) ?? null))
+        .filter((id): id is string => Boolean(id));
       return {
         itemIds,
         total: json.paging?.total
@@ -271,6 +275,7 @@ export async function syncAllItemsForCurrentUser(): Promise<{
       totalItems += itemIds.length;
 
       for (const itemId of itemIds) {
+        if (!itemId || typeof itemId !== "string") continue;
         const itemRes = await fetch(
           `https://api.mercadolibre.com/items/${itemId}`,
           { headers }
@@ -286,6 +291,10 @@ export async function syncAllItemsForCurrentUser(): Promise<{
         }
 
         const item = (await itemRes.json()) as MercadoLibreItemResponse;
+        if (!item?.id) {
+          console.warn("[ML sync-items] Item sin id", { item_id: itemId });
+          continue;
+        }
         const result = await upsertMercadoLibreItemWithVariants(item);
 
         if (result.itemInserted) insertedItems += 1;
