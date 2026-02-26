@@ -100,6 +100,7 @@ export async function syncStockToMercadoLibre(
         const text = await res.text();
         return { ok: false, error: `ML stock update ${res.status}: ${text}` };
       }
+      await updateLocalMlItemQuantity(supabase, external_item_id, quantity);
       return { ok: true };
     }
 
@@ -125,6 +126,7 @@ export async function syncStockToMercadoLibre(
         const text = await res.text();
         return { ok: false, error: `ML stock update ${res.status}: ${text}` };
       }
+      await updateLocalMlItemQuantity(supabase, external_item_id, quantity);
       return { ok: true };
     }
 
@@ -146,10 +148,48 @@ export async function syncStockToMercadoLibre(
       return { ok: false, error: `ML stock update ${res.status}: ${text}` };
     }
 
+    await updateLocalMlVariantQuantity(supabase, external_variation_id, quantity);
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error desconocido al sincronizar stock con ML.";
     return { ok: false, error: msg };
+  }
+}
+
+/**
+ * Actualiza la caché local para que la UI muestre el stock correcto sin re-sincronizar desde ML.
+ */
+async function updateLocalMlItemQuantity(
+  supabase: ReturnType<typeof getSupabaseServerClient>,
+  itemId: string,
+  quantity: number
+): Promise<void> {
+  const { error } = await supabase
+    .from("mercadolibre_items")
+    .update({ available_quantity: quantity })
+    .eq("item_id", itemId);
+  if (error) {
+    console.warn("[ML] No se pudo actualizar caché local de ítem", {
+      item_id: itemId,
+      error: error.message
+    });
+  }
+}
+
+async function updateLocalMlVariantQuantity(
+  supabase: ReturnType<typeof getSupabaseServerClient>,
+  variationId: string,
+  quantity: number
+): Promise<void> {
+  const { error } = await supabase
+    .from("mercadolibre_variants")
+    .update({ available_quantity: quantity })
+    .eq("variation_id", variationId);
+  if (error) {
+    console.warn("[ML] No se pudo actualizar caché local de variante", {
+      variation_id: variationId,
+      error: error.message
+    });
   }
 }
 
@@ -317,10 +357,19 @@ export async function syncAllItemsForCurrentUser(): Promise<{
       used_public_search: usePublicSearch
     };
   } catch (e) {
-    const msg =
-      e instanceof Error ? e.message : "Error desconocido al sincronizar items de ML.";
+    const msg = getErrorMessage(e, "Error desconocido al sincronizar items de ML.");
+    console.error("[ML sync-items] Excepción:", e);
     return { ok: false, error: msg };
   }
+}
+
+function getErrorMessage(e: unknown, fallback: string): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string") {
+    return (e as { message: string }).message;
+  }
+  if (typeof e === "string") return e;
+  return fallback;
 }
 
 

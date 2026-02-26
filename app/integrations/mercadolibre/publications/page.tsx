@@ -40,6 +40,9 @@ type ProductSummary = {
 type VariantWithLink = MlVariant & {
   link?: LinkRow | null;
   linkedProduct?: ProductSummary | null;
+  internalStock?: number | null;
+  soldFromSaas?: number;
+  soldFromMl?: number;
 };
 
 type ItemWithVariants = MlItem & {
@@ -133,6 +136,7 @@ export default function MercadoLibrePublicationsPage() {
 
         const productIds = Array.from(new Set(links.map((l) => l.product_id)));
         let productsMap = new Map<string, ProductSummary>();
+        let statsMap = new Map<string, { stock: number; soldSaas: number; soldMl: number }>();
         if (productIds.length > 0) {
           const { data: productsData, error: productsError } = await supabase
             .from("products")
@@ -142,13 +146,47 @@ export default function MercadoLibrePublicationsPage() {
           productsMap = new Map(
             ((productsData ?? []) as ProductSummary[]).map((p) => [p.id, p])
           );
+
+          const { data: stockData, error: stockError } = await supabase
+            .from("stock_movements")
+            .select("product_id, quantity, movement_type, channel")
+            .in("product_id", productIds);
+          if (stockError) throw stockError;
+
+          for (const row of (stockData ?? []) as {
+            product_id: string;
+            quantity: number;
+            movement_type?: string | null;
+            channel?: string | null;
+          }[]) {
+            const current = statsMap.get(row.product_id) ?? {
+              stock: 0,
+              soldSaas: 0,
+              soldMl: 0
+            };
+            const qty = Number(row.quantity ?? 0);
+            current.stock += qty;
+            if (qty < 0) {
+              if (row.movement_type === "SALE_PHYSICAL" || row.channel === "LOCAL") {
+                current.soldSaas += Math.abs(qty);
+              }
+              if (row.movement_type === "SALE_MERCADOLIBRE" || row.channel === "MERCADOLIBRE") {
+                current.soldMl += Math.abs(qty);
+              }
+            }
+            statsMap.set(row.product_id, current);
+          }
         }
 
-        const linkMap = new Map<string, { link: LinkRow; product: ProductSummary | null }>();
+        const linkMap = new Map<
+          string,
+          { link: LinkRow; product: ProductSummary | null; stats: { stock: number; soldSaas: number; soldMl: number } | null }
+        >();
         for (const l of links) {
           const key = `${l.external_item_id}|${l.external_variation_id}`;
           const prod = productsMap.get(l.product_id) ?? null;
-          linkMap.set(key, { link: l, product: prod });
+          const stats = statsMap.get(l.product_id) ?? null;
+          linkMap.set(key, { link: l, product: prod, stats });
         }
 
         const itemsEnriched: ItemWithVariants[] = itemsRows.map((item) => {
@@ -156,10 +194,14 @@ export default function MercadoLibrePublicationsPage() {
             .filter((v) => v.item_id === item.item_id)
             .map<VariantWithLink>((v) => {
               const linkInfo = linkMap.get(`${item.item_id}|${v.variation_id}`);
+              const stats = linkInfo?.stats ?? null;
               return {
                 ...v,
                 link: linkInfo?.link ?? null,
-                linkedProduct: linkInfo?.product ?? null
+                linkedProduct: linkInfo?.product ?? null,
+                internalStock: stats?.stock ?? null,
+                soldFromSaas: stats?.soldSaas ?? 0,
+                soldFromMl: stats?.soldMl ?? 0
               };
             });
           return { ...item, variants: itemVariants };
@@ -446,9 +488,11 @@ export default function MercadoLibrePublicationsPage() {
                                   <span className="font-medium">
                                     {v.available_quantity ?? "N/D"}
                                   </span>{" "}
-                                  · Vendido:{" "}
+                                  · Vendidos ML:{" "}
                                   <span className="font-medium">
-                                    {v.sold_quantity ?? 0}
+                                    {typeof v.soldFromMl === "number"
+                                      ? v.soldFromMl
+                                      : v.sold_quantity ?? 0}
                                   </span>
                                   {v.seller_custom_field && (
                                     <>
@@ -475,16 +519,22 @@ export default function MercadoLibrePublicationsPage() {
                                   </span>
                                 </div>
                                 {isLinked && v.linkedProduct && (
-                                  <p className="text-[11px] text-slate-600">
-                                    {v.linkedProduct.name}{" "}
-                                    {v.linkedProduct.sku && (
-                                      <span className="text-slate-500">({v.linkedProduct.sku})</span>
-                                    )}
-                                    <br />
-                                    <span className="text-slate-500">
-                                      Cód: {v.linkedProduct.barcode}
-                                    </span>
-                                  </p>
+                                  <>
+                                    <p className="text-[11px] text-slate-600">
+                                      {v.linkedProduct.name}{" "}
+                                      {v.linkedProduct.sku && (
+                                        <span className="text-slate-500">({v.linkedProduct.sku})</span>
+                                      )}
+                                      <br />
+                                      <span className="text-slate-500">
+                                        Cód: {v.linkedProduct.barcode}
+                                      </span>
+                                    </p>
+                                    <p className="mt-0.5 text-[11px] text-slate-600">
+                                      SaaS: vendidos {v.soldFromSaas ?? 0} · Stock interno:{" "}
+                                      {v.internalStock ?? "N/D"}
+                                    </p>
+                                  </>
                                 )}
                                 {!isLinked && (
                                   <button
