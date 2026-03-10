@@ -34,6 +34,26 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
    created_at?: string | null;
  };
 
+function getDebtDueStatus(createdAt?: string | null): { overdue: boolean; label: string } {
+  if (!createdAt) return { overdue: false, label: "Sin fecha" };
+  const MS_PER_DAY = 86400000;
+  const DAYS_LIMIT = 30;
+  const elapsed = (Date.now() - new Date(createdAt).getTime()) / MS_PER_DAY;
+  const daysUntilDue = Math.floor(DAYS_LIMIT - elapsed);
+
+  if (daysUntilDue < 0) {
+    return {
+      overdue: true,
+      label: `Vencida hace ${Math.abs(daysUntilDue)} día${Math.abs(daysUntilDue) !== 1 ? "s" : ""}`
+    };
+  }
+  if (daysUntilDue === 0) return { overdue: false, label: "Vence hoy" };
+  return {
+    overdue: false,
+    label: `En plazo (${daysUntilDue} día${daysUntilDue !== 1 ? "s" : ""})`
+  };
+}
+
  function getReferenceLabel(referenceType: string | null | undefined): string {
    if (!referenceType) return "N/D";
    const labels: Record<string, string> = {
@@ -400,45 +420,52 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
                        <tr className="border-b border-slate-200">
                          <th className="py-2 font-medium">Fecha</th>
                          <th className="py-2 font-medium">Descripción</th>
+                        <th className="py-2 font-medium">Estado</th>
                          <th className="py-2 font-medium">Referencia</th>
                          <th className="py-2 text-right font-medium">Monto</th>
                          <th className="py-2"></th>
                        </tr>
                      </thead>
                      <tbody>
-                       {paginatedDebtMovements.map((move) => (
-                         <tr key={move.id} className="border-b border-slate-100">
-                           <td className="py-3 text-slate-600">
-                             {move.created_at
-                               ? new Date(move.created_at).toLocaleString()
-                               : "N/D"}
-                           </td>
-                           <td className="py-3 text-slate-700 max-w-[280px] truncate" title={
-                             move.reference_type === "SALE" && move.reference_id && saleProductsBySaleId[move.reference_id]
-                               ? (move.note ? `${move.note} · ${saleProductsBySaleId[move.reference_id]}` : saleProductsBySaleId[move.reference_id])
-                               : (move.note ?? undefined)
-                           }>
-                             {move.reference_type === "SALE" && move.reference_id && saleProductsBySaleId[move.reference_id]
-                               ? (move.note ? `${move.note} · ${saleProductsBySaleId[move.reference_id]}` : saleProductsBySaleId[move.reference_id])
-                               : (move.note ?? "—")}
-                           </td>
-                           <td className="py-3 text-slate-500">
-                             {getReferenceLabel(move.reference_type)}
-                           </td>
-                           <td className="py-3 text-right font-semibold text-rose-700">
-                             +{(move.amount ?? 0).toFixed(2)}
-                           </td>
-                           <td className="py-3 text-right">
-                             <button
-                               type="button"
-                               onClick={() => handlePayDebt(move.amount ?? 0)}
-                               className="text-sm font-semibold text-teal-700 hover:text-teal-800"
-                             >
-                               Pagar
-                             </button>
-                           </td>
-                         </tr>
-                       ))}
+                      {paginatedDebtMovements.map((move) => {
+                        const dueStatus = getDebtDueStatus(move.created_at);
+                        return (
+                          <tr key={move.id} className="border-b border-slate-100">
+                            <td className="py-3 text-slate-600">
+                              {move.created_at
+                                ? new Date(move.created_at).toLocaleString()
+                                : "N/D"}
+                            </td>
+                            <td className="py-3 text-slate-700 max-w-[280px] truncate" title={
+                              move.reference_type === "SALE" && move.reference_id && saleProductsBySaleId[move.reference_id]
+                                ? (move.note ? `${move.note} · ${saleProductsBySaleId[move.reference_id]}` : saleProductsBySaleId[move.reference_id])
+                                : (move.note ?? undefined)
+                            }>
+                              {move.reference_type === "SALE" && move.reference_id && saleProductsBySaleId[move.reference_id]
+                                ? (move.note ? `${move.note} · ${saleProductsBySaleId[move.reference_id]}` : saleProductsBySaleId[move.reference_id])
+                                : (move.note ?? "—")}
+                            </td>
+                            <td className={`py-3 text-xs font-medium ${dueStatus.overdue ? "text-rose-700" : "text-slate-600"}`}>
+                              {dueStatus.label}
+                            </td>
+                            <td className="py-3 text-slate-500">
+                              {getReferenceLabel(move.reference_type)}
+                            </td>
+                            <td className="py-3 text-right font-semibold text-rose-700">
+                              +{(move.amount ?? 0).toFixed(2)}
+                            </td>
+                            <td className="py-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handlePayDebt(move.amount ?? 0)}
+                                className="text-sm font-semibold text-teal-700 hover:text-teal-800"
+                              >
+                                Pagar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                      </tbody>
                    </table>
                  </div>

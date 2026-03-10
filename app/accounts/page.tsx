@@ -21,6 +21,16 @@ type BalanceRow = {
   balance: number;
 };
 
+type MovementAgingRow = {
+  account_id: string;
+  movement_type: string;
+  amount: number;
+  created_at: string;
+  reference_type: string | null;
+  reference_id: string | null;
+  note: string | null;
+};
+
 type AccountListItem = {
   id: string;
   fullName: string;
@@ -31,7 +41,110 @@ type AccountListItem = {
   oldestDebtAt?: string | null;
   /** Días restantes hasta cumplir 30 desde la primera deuda (positivo = quedan, negativo = venció). */
   daysUntil30?: number | null;
+  overdueAmount?: number;
+  overdueLabel?: string | null;
+  nextDueInDays?: number | null;
 };
+
+function getDebtAgingSummary(
+  movements: MovementAgingRow[],
+  nowMs: number
+): {
+  oldestOpenDebtDate: string | null;
+  overdueAmount: number;
+  firstOverdueReferenceType: string | null;
+  firstOverdueReferenceId: string | null;
+  firstOverdueNote: string | null;
+  nextDueInDays: number | null;
+  nextUpcomingReferenceType: string | null;
+  nextUpcomingReferenceId: string | null;
+  nextUpcomingNote: string | null;
+} {
+  const debtQueue: Array<{
+    createdAt: string;
+    remaining: number;
+    referenceType: string | null;
+    referenceId: string | null;
+    note: string | null;
+  }> = [];
+  const EPSILON = 0.0001;
+  const MS_PER_DAY = 86400000;
+  const DAYS_LIMIT = 30;
+
+  for (const move of movements) {
+    const amount = Number(move.amount ?? 0);
+    if (!Number.isFinite(amount) || amount === 0) continue;
+
+    if (move.movement_type === "DEBT" && amount > 0) {
+      debtQueue.push({
+        createdAt: move.created_at,
+        remaining: amount,
+        referenceType: move.reference_type,
+        referenceId: move.reference_id,
+        note: move.note
+      });
+      continue;
+    }
+
+    if (amount < 0) {
+      let credit = Math.abs(amount);
+      for (const debt of debtQueue) {
+        if (credit <= EPSILON) break;
+        if (debt.remaining <= EPSILON) continue;
+        const applied = Math.min(credit, debt.remaining);
+        debt.remaining -= applied;
+        credit -= applied;
+      }
+    }
+  }
+
+  let oldestOpenDebtDate: string | null = null;
+  let overdueAmount = 0;
+  let firstOverdueReferenceType: string | null = null;
+  let firstOverdueReferenceId: string | null = null;
+  let firstOverdueNote: string | null = null;
+  let nextDueInDays: number | null = null;
+  let nextUpcomingReferenceType: string | null = null;
+  let nextUpcomingReferenceId: string | null = null;
+  let nextUpcomingNote: string | null = null;
+
+  for (const debt of debtQueue) {
+    if (debt.remaining <= EPSILON) continue;
+    if (!oldestOpenDebtDate) oldestOpenDebtDate = debt.createdAt;
+
+    const elapsed = (nowMs - new Date(debt.createdAt).getTime()) / MS_PER_DAY;
+    const daysUntilDue = Math.floor(DAYS_LIMIT - elapsed);
+
+    if (daysUntilDue < 0) {
+      overdueAmount += debt.remaining;
+      if (!firstOverdueReferenceType && !firstOverdueReferenceId && !firstOverdueNote) {
+        firstOverdueReferenceType = debt.referenceType;
+        firstOverdueReferenceId = debt.referenceId;
+        firstOverdueNote = debt.note;
+      }
+      continue;
+    }
+
+    if (nextDueInDays == null || daysUntilDue < nextDueInDays) {
+      nextDueInDays = daysUntilDue;
+      nextUpcomingReferenceType = debt.referenceType;
+      nextUpcomingReferenceId = debt.referenceId;
+      nextUpcomingNote = debt.note;
+    }
+  }
+
+  return {
+    oldestOpenDebtDate,
+    overdueAmount: Number(overdueAmount.toFixed(2)),
+    firstOverdueReferenceType,
+    firstOverdueReferenceId,
+    firstOverdueNote,
+    nextDueInDays,
+    nextUpcomingReferenceType,
+    nextUpcomingReferenceId,
+    nextUpcomingNote
+  };
+}
 
 export default function AccountsPage() {
   const supabase = getSupabaseClient();
@@ -89,35 +202,124 @@ export default function AccountsPage() {
     const accountIdsWithDebt = (accounts ?? [])
       .filter((a) => (balanceMap.get(a.customer_id) ?? 0) > 0)
       .map((a) => a.id);
-    let oldestDebtByAccount = new Map<string, string>();
-    if (accountIdsWithDebt.length > 0) {
-      const { data: debtRows } = await supabase
-        .from("account_movements")
-        .select("account_id, created_at")
-        .in("account_id", accountIdsWithDebt)
-        .eq("movement_type", "DEBT")
-        .gt("amount", 0)
-        .order("created_at", { ascending: true });
-      const byAccount = new Map<string, string>();
-      for (const row of (debtRows ?? []) as { account_id: string; created_at: string }[]) {
-        if (!byAccount.has(row.account_id)) byAccount.set(row.account_id, row.created_at);
+    let debtAgingByAccount = new Map<
+      string,
+      {
+        oldestOpenDebtDate: string | null;
+        overdueAmount: number;
+        firstOverdueReferenceType: string | null;
+        firstOverdueReferenceId: string | null;
+        firstOverdueNote: string | null;
+        nextDueInDays: number | null;
+        nextUpcomingReferenceType: string | null;
+        nextUpcomingReferenceId: string | null;
+        nextUpcomingNote: string | null;
       }
-      oldestDebtByAccount = byAccount;
+    >();
+    const now = Date.now();
+    if (accountIdsWithDebt.length > 0) {
+      const { data: movementRows } = await supabase
+        .from("account_movements")
+        .select("account_id, movement_type, amount, created_at, reference_type, reference_id, note")
+        .in("account_id", accountIdsWithDebt)
+        .order("created_at", { ascending: true });
+
+      const grouped = new Map<string, MovementAgingRow[]>();
+      for (const row of (movementRows ?? []) as MovementAgingRow[]) {
+        const listForAccount = grouped.get(row.account_id) ?? [];
+        listForAccount.push(row);
+        grouped.set(row.account_id, listForAccount);
+      }
+
+      const byAccount = new Map<
+        string,
+        {
+          oldestOpenDebtDate: string | null;
+          overdueAmount: number;
+          firstOverdueReferenceType: string | null;
+          firstOverdueReferenceId: string | null;
+          firstOverdueNote: string | null;
+          nextDueInDays: number | null;
+          nextUpcomingReferenceType: string | null;
+          nextUpcomingReferenceId: string | null;
+          nextUpcomingNote: string | null;
+        }
+      >();
+      for (const accountId of accountIdsWithDebt) {
+        const summary = getDebtAgingSummary(grouped.get(accountId) ?? [], now);
+        byAccount.set(accountId, summary);
+      }
+      debtAgingByAccount = byAccount;
     }
 
-    const now = Date.now();
+    const saleIdsForLabels = Array.from(
+      new Set(
+        Array.from(debtAgingByAccount.values())
+          .flatMap((entry) => {
+            const ids: string[] = [];
+            if (entry.nextUpcomingReferenceType === "SALE" && entry.nextUpcomingReferenceId) {
+              ids.push(entry.nextUpcomingReferenceId);
+            }
+            if (entry.firstOverdueReferenceType === "SALE" && entry.firstOverdueReferenceId) {
+              ids.push(entry.firstOverdueReferenceId);
+            }
+            return ids;
+          })
+      )
+    );
+    const saleLabelById = new Map<string, string>();
+    if (saleIdsForLabels.length > 0) {
+      const { data: saleItemsData } = await supabase
+        .from("sale_items")
+        .select("sale_id, product_id, quantity")
+        .in("sale_id", saleIdsForLabels);
+      const saleItems = (saleItemsData ?? []) as {
+        sale_id: string;
+        product_id: string;
+        quantity: number;
+      }[];
+      const productIds = Array.from(new Set(saleItems.map((s) => s.product_id)));
+      const productNameById = new Map<string, string>();
+      if (productIds.length > 0) {
+        const { data: productsData } = await supabase
+          .from("products")
+          .select("id, name")
+          .in("id", productIds);
+        for (const p of (productsData ?? []) as { id: string; name: string }[]) {
+          productNameById.set(p.id, p.name);
+        }
+      }
+      for (const saleId of saleIdsForLabels) {
+        const label = saleItems
+          .filter((item) => item.sale_id === saleId)
+          .map((item) => `${item.quantity}x ${productNameById.get(item.product_id) ?? "Producto"}`)
+          .join(", ");
+        if (label) saleLabelById.set(saleId, label);
+      }
+    }
+
     const MS_PER_DAY = 86400000;
     const DAYS_LIMIT = 30;
 
     const next: AccountListItem[] = list.map((c) => {
       const balance = balanceMap.get(c.id) ?? 0;
       const account = accountMap.get(c.id);
-      const oldestAt = account ? oldestDebtByAccount.get(account.id) : undefined;
+      const debtAging = account ? debtAgingByAccount.get(account.id) : undefined;
+      const oldestAt = debtAging?.oldestOpenDebtDate ?? null;
       let daysUntil30: number | null = null;
       if (oldestAt && balance > 0) {
         const elapsed = (now - new Date(oldestAt).getTime()) / MS_PER_DAY;
         daysUntil30 = Math.floor(DAYS_LIMIT - elapsed);
       }
+      const overdueLabel =
+        debtAging?.firstOverdueNote?.trim()
+          ? debtAging.firstOverdueNote.trim()
+          : debtAging?.firstOverdueReferenceType === "SALE" &&
+              debtAging.firstOverdueReferenceId
+            ? saleLabelById.get(debtAging.firstOverdueReferenceId) ?? "Compra fiada"
+            : debtAging?.firstOverdueReferenceType === "MANUAL"
+              ? "Deuda manual"
+              : "Deuda";
       return {
         id: c.id,
         fullName: c.full_name,
@@ -125,7 +327,10 @@ export default function AccountsPage() {
         status: (account?.status ?? "SIN CUENTA") as AccountListItem["status"],
         balance,
         oldestDebtAt: oldestAt ?? null,
-        daysUntil30: daysUntil30 ?? null
+        daysUntil30: daysUntil30 ?? null,
+        overdueAmount: debtAging?.overdueAmount ?? 0,
+        overdueLabel,
+        nextDueInDays: debtAging?.nextDueInDays ?? null,
       };
     });
 
@@ -271,13 +476,17 @@ export default function AccountsPage() {
                         </span>
                       </div>
                       <div className="mt-4 space-y-2 border-t border-slate-200/80 pt-3">
-                        {item.balance > 0 && item.daysUntil30 != null && (
+                        {item.balance > 0 && (item.overdueAmount ?? 0) > 0 && (
+                          <p className="text-xs font-medium text-rose-700">
+                            Deuda vencida: {item.overdueLabel ?? "Deuda"}
+                          </p>
+                        )}
+                        {item.balance > 0 && item.nextDueInDays != null && (
                           <p className="text-xs font-medium text-slate-600">
-                            {item.daysUntil30 > 0
-                              ? `Quedan ${item.daysUntil30} día${item.daysUntil30 !== 1 ? "s" : ""} para cumplir 30`
-                              : item.daysUntil30 === 0
-                                ? "Hoy cumple 30 días"
-                                : `Venció hace ${Math.abs(item.daysUntil30)} día${Math.abs(item.daysUntil30) !== 1 ? "s" : ""}`}
+                            Próxima a vencer{" "}
+                            {item.nextDueInDays > 0
+                              ? `en ${item.nextDueInDays} día${item.nextDueInDays !== 1 ? "s" : ""}`
+                              : "hoy"}
                           </p>
                         )}
                         <div className="flex items-baseline justify-between">
