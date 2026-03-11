@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { getSupabaseClient } from "../../../../lib/supabaseClient";
-import { createMercadoLibreLink } from "../../../../lib/mercadolibre/actions";
+import { createMercadoLibreLink, deleteMercadoLibreLink } from "../../../../lib/mercadolibre/actions";
 
 type MlItem = {
   item_id: string;
@@ -99,6 +99,7 @@ export default function MercadoLibrePublicationsPage() {
   const [linkMessage, setLinkMessage] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [isLinkPending, startLinkTransition] = useTransition();
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -238,6 +239,22 @@ export default function MercadoLibrePublicationsPage() {
     });
   }, [items, filterMode]);
 
+  const PAGE_SIZE = 10;
+  const [pageIndex, setPageIndex] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const paginatedItems = useMemo(
+    () =>
+      filteredItems.slice(
+        pageIndex * PAGE_SIZE,
+        pageIndex * PAGE_SIZE + PAGE_SIZE
+      ),
+    [filteredItems, pageIndex]
+  );
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [filterMode]);
+
   function toggleExpanded(itemId: string) {
     setExpandedItemIds((prev) => {
       const next = new Set(prev);
@@ -307,14 +324,28 @@ export default function MercadoLibrePublicationsPage() {
           return;
         }
         setLinkMessage("Vinculación creada correctamente.");
-        // Refrescar datos para reflejar el estado vinculado.
-        // Simplificamos recargando la página de publicaciones.
         window.location.reload();
       } catch (e) {
         const msg = e instanceof Error ? e.message : "No se pudo crear la vinculación.";
         setLinkError(msg);
       }
     });
+  }
+
+  async function handleUnlink(linkId: string) {
+    setUnlinkingId(linkId);
+    try {
+      const result = await deleteMercadoLibreLink(linkId);
+      if (!result.ok) {
+        setError(result.error ?? "No se pudo desvincular.");
+        return;
+      }
+      window.location.reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo desvincular.");
+    } finally {
+      setUnlinkingId(null);
+    }
   }
 
   return (
@@ -419,7 +450,7 @@ export default function MercadoLibrePublicationsPage() {
         )}
 
         <div className="mt-4 space-y-3">
-          {filteredItems.map((item) => {
+          {paginatedItems.map((item) => {
             const isExpanded = expandedItemIds.has(item.item_id);
             const variantsLinked = item.variants.filter((v) => v.link && v.linkedProduct).length;
             const variantsUnlinked = item.variants.length - variantsLinked;
@@ -518,7 +549,7 @@ export default function MercadoLibrePublicationsPage() {
                                     {isLinked ? "Vinculado" : "No vinculado"}
                                   </span>
                                 </div>
-                                {isLinked && v.linkedProduct && (
+                                {isLinked && v.linkedProduct && v.link && (
                                   <>
                                     <p className="text-[11px] text-slate-600">
                                       {v.linkedProduct.name}{" "}
@@ -534,6 +565,14 @@ export default function MercadoLibrePublicationsPage() {
                                       SaaS: vendidos {v.soldFromSaas ?? 0} · Stock interno:{" "}
                                       {v.internalStock ?? "N/D"}
                                     </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUnlink(v.link!.id)}
+                                      disabled={unlinkingId === v.link!.id}
+                                      className="mt-1 rounded-md border border-rose-300 bg-white px-2 py-1 text-[11px] font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {unlinkingId === v.link!.id ? "Desvinculando…" : "Desvincular"}
+                                    </button>
                                   </>
                                 )}
                                 {!isLinked && (
@@ -562,6 +601,33 @@ export default function MercadoLibrePublicationsPage() {
             );
           })}
         </div>
+
+        {!loading && !error && filteredItems.length > 0 && totalPages > 1 && (
+          <div className="mt-4 flex items-center justify-between gap-4 border-t border-slate-200 px-1 pt-3 text-xs text-slate-500">
+            <span>
+              {filteredItems.length} publicación
+              {filteredItems.length !== 1 ? "es" : ""} · Página {pageIndex + 1} de {totalPages}
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+                disabled={pageIndex === 0}
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
+                onClick={() => setPageIndex((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={pageIndex >= totalPages - 1}
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+        )}
 
         {linkTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
