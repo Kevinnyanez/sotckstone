@@ -332,12 +332,12 @@ export async function createSale(
           ids: (stockMovements ?? []).map((s) => s.id)
         });
 
+        // Venta física (incl. 100% fiada): un solo descuento arriba; acá solo enviamos stock a ML.
         if (input.channel === "PHYSICAL") {
           for (const item of input.items) {
             const initial = stocks.get(item.productId) ?? 0;
             const remaining = initial - item.qty;
             if (remaining >= 0) {
-              // No bloqueamos la venta si falla la sincronización con ML.
               void syncStockToMercadoLibre(item.productId, remaining);
             }
           }
@@ -454,6 +454,7 @@ export async function createSale(
       ids: (stockMovements ?? []).map((s) => s.id)
     });
 
+    // Venta física (incl. 100% fiada): un solo descuento en stock_movements arriba; acá solo enviamos stock a ML.
     if (input.channel === "PHYSICAL") {
       for (const item of input.items) {
         const initial = stocks.get(item.productId) ?? 0;

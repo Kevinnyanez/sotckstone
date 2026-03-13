@@ -123,6 +123,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (topic !== "orders" && topic !== "marketplace_orders") {
+      if (topic) {
+        console.log("[webhook ML] Tema no manejado (solo procesamos orders/marketplace_orders e items)", { topic });
+      }
       return NextResponse.json({}, { status: 200 });
     }
 

@@ -58,6 +58,16 @@ function MercadoLibreIntegrationContent() {
     updated?: { items: number; variants: number };
     used_public_search?: boolean;
   } | null>(null);
+  const [syncOrdersLoading, setSyncOrdersLoading] = useState(false);
+  const [syncOrdersResult, setSyncOrdersResult] = useState<{
+    ok: boolean;
+    message?: string;
+    processed?: number;
+    duplicates?: number;
+    errors?: number;
+    orders_scanned?: number;
+    processed_items?: { order_id: number; product_id: string; product_name: string; quantity: number }[];
+  } | null>(null);
 
   const loadProducts = useCallback(async () => {
     const { data, error } = await supabase
@@ -145,6 +155,32 @@ function MercadoLibreIntegrationContent() {
       setSyncError("No se pudo sincronizar publicaciones.");
     } finally {
       setSyncLoading(false);
+    }
+  }
+
+  async function handleSyncOrders() {
+    setSyncOrdersResult(null);
+    setSyncOrdersLoading(true);
+    try {
+      const res = await fetch("/api/mercadolibre/sync-orders", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setSyncOrdersResult({ ok: false, message: data?.error ?? "No se pudo sincronizar ventas." });
+        return;
+      }
+      setSyncOrdersResult({
+        ok: true,
+        message: data.message,
+        processed: data.processed,
+        duplicates: data.duplicates,
+        errors: data.errors,
+        orders_scanned: data.orders_scanned,
+        processed_items: data.processed_items
+      });
+    } catch {
+      setSyncOrdersResult({ ok: false, message: "No se pudo sincronizar ventas." });
+    } finally {
+      setSyncOrdersLoading(false);
     }
   }
 
@@ -355,7 +391,50 @@ function MercadoLibreIntegrationContent() {
                   >
                     {syncLoading ? "Sincronizando..." : "Sincronizar publicaciones ahora"}
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleSyncOrders}
+                    disabled={syncOrdersLoading}
+                    className="inline-flex items-center gap-2 rounded-lg border border-amber-600 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {syncOrdersLoading ? "Sincronizando…" : "Sincronizar ventas ML (descontar stock)"}
+                  </button>
                 </div>
+                {syncOrdersResult && (
+                  <div
+                    className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
+                      syncOrdersResult.ok
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-rose-200 bg-rose-50 text-rose-700"
+                    }`}
+                  >
+                    {syncOrdersResult.message}
+                    {syncOrdersResult.ok && (
+                      <>
+                        <p className="mt-1 text-xs">
+                          Órdenes revisadas: {syncOrdersResult.orders_scanned ?? 0} · Descontadas: {syncOrdersResult.processed ?? 0} ·
+                          Ya existían: {syncOrdersResult.duplicates ?? 0} · Errores: {syncOrdersResult.errors ?? 0}
+                        </p>
+                        {syncOrdersResult.processed_items && syncOrdersResult.processed_items.length > 0 && (
+                          <>
+                            <p className="mt-2 text-xs font-medium">Descontado:</p>
+                            <ul className="mt-0.5 list-inside list-disc text-xs">
+                              {syncOrdersResult.processed_items.map((p, idx) => (
+                                <li key={`${p.order_id}-${p.product_id}-${idx}`}>
+                                  Orden ML {p.order_id} → {p.product_name} ({p.quantity})
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        )}
+                        <p className="mt-2 text-xs text-slate-600">
+                          Para que cada venta en ML descuente automáticamente, configurá el webhook en la app de Mercado Libre (DevCenter): URL{" "}
+                          <code className="rounded bg-white/80 px-1">/api/mercadolibre/webhook</code> y tema órdenes.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
                 <ol className="list-inside list-decimal space-y-1 text-slate-600">
                   <li>Clic en el botón de arriba.</li>
                   <li>Iniciá sesión en Mercado Libre si te lo pide.</li>

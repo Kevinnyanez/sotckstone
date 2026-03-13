@@ -1,9 +1,10 @@
 "use client";
- 
- import Link from "next/link";
- import { useParams, useRouter } from "next/navigation";
- import { useEffect, useState, useTransition } from "react";
- import { getSupabaseClient } from "../../../../lib/supabaseClient";
+
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
+import { syncProductStockToMercadoLibre } from "../../../../lib/mercadolibre/actions";
+import { getSupabaseClient } from "../../../../lib/supabaseClient";
  
  type StockRow = {
    product_id: string;
@@ -73,14 +74,22 @@
           channel: "LOCAL"
         }
       ]);
- 
-       if (error) {
-         setMessage(`Error al ajustar stock: ${error.message}`);
-         return;
-       }
- 
-       router.push(`/products/${productId}`);
-     });
+
+      if (error) {
+        setMessage(`Error al ajustar stock: ${error.message}`);
+        return;
+      }
+
+      const syncResult = await syncProductStockToMercadoLibre(productId);
+      if (!syncResult.ok) {
+        setMessage(
+          `Ajuste guardado. No se pudo actualizar Mercado Libre: ${syncResult.error}. Podés sincronizar después desde Integraciones.`
+        );
+        return;
+      }
+
+      router.push(`/products/${productId}`);
+    });
    }
  
    return (
@@ -90,7 +99,7 @@
            <div>
              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Ajuste de stock</h1>
              <p className="mt-0.5 text-sm text-slate-500">
-               Ajuste manual del inventario para el producto seleccionado.
+               Ajuste manual del inventario. Si el producto está vinculado a Mercado Libre, el stock se actualiza allí también.
              </p>
            </div>
            <Link

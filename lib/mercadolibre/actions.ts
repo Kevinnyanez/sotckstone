@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseServerClient } from "../supabaseServer";
+import { syncStockToMercadoLibre } from "./api";
 
 const PLATFORM = "mercadolibre";
 
@@ -53,4 +54,27 @@ export async function deleteMercadoLibreLink(id: string): Promise<LinkResult> {
   const { error } = await supabase.from("external_variants").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
+}
+
+export type SyncStockResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/** Obtiene el stock actual del producto y lo envía a Mercado Libre (para ajustes o ventas fiadas anotadas solo como deuda). */
+export async function syncProductStockToMercadoLibre(
+  productId: string
+): Promise<SyncStockResult> {
+  const supabase = getSupabaseServerClient();
+  const { data: row, error: stockError } = await supabase
+    .from("v_stock_current")
+    .select("stock")
+    .eq("product_id", productId)
+    .maybeSingle();
+  if (stockError) return { ok: false, error: stockError.message };
+  const currentStock = Number(row?.stock ?? 0);
+  if (!Number.isFinite(currentStock)) {
+    return { ok: false, error: "Stock inválido para sincronizar." };
+  }
+  const quantityToSync = Math.max(0, currentStock);
+  return syncStockToMercadoLibre(productId, quantityToSync);
 }
