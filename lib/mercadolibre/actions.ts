@@ -76,5 +76,7 @@ export async function syncProductStockToMercadoLibre(
     return { ok: false, error: "Stock inválido para sincronizar." };
   }
   const quantityToSync = Math.max(0, currentStock);
-  return syncStockToMercadoLibre(productId, quantityToSync);
+  const result = await syncStockToMercadoLibre(productId, quantityToSync);
+  if (result.ok) return { ok: true };
+  return { ok: false, error: result.error ?? "Error al sincronizar con Mercado Libre." };
 }
