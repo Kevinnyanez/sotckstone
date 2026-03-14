@@ -334,13 +334,18 @@ export async function createSale(
 
         // Venta física (incl. 100% fiada): un solo descuento arriba; acá solo enviamos stock a ML.
         if (input.channel === "PHYSICAL") {
+          const qtyByProduct = new Map<string, number>();
           for (const item of input.items) {
-            const initial = stocks.get(item.productId) ?? 0;
-            const remaining = initial - item.qty;
-            if (remaining >= 0) {
-              void syncStockToMercadoLibre(item.productId, remaining);
-            }
+            const sum = (qtyByProduct.get(item.productId) ?? 0) + item.qty;
+            qtyByProduct.set(item.productId, sum);
           }
+          await Promise.allSettled(
+            Array.from(qtyByProduct.entries()).map(([productId, totalQty]) => {
+              const initial = stocks.get(productId) ?? 0;
+              const remaining = Math.max(0, initial - totalQty);
+              return syncStockToMercadoLibre(productId, remaining);
+            })
+          );
         }
 
         if (input.paidAmount > 0) {
@@ -456,13 +461,18 @@ export async function createSale(
 
     // Venta física (incl. 100% fiada): un solo descuento en stock_movements arriba; acá solo enviamos stock a ML.
     if (input.channel === "PHYSICAL") {
+      const qtyByProduct = new Map<string, number>();
       for (const item of input.items) {
-        const initial = stocks.get(item.productId) ?? 0;
-        const remaining = initial - item.qty;
-        if (remaining >= 0) {
-          void syncStockToMercadoLibre(item.productId, remaining);
-        }
+        const sum = (qtyByProduct.get(item.productId) ?? 0) + item.qty;
+        qtyByProduct.set(item.productId, sum);
       }
+      await Promise.allSettled(
+        Array.from(qtyByProduct.entries()).map(([productId, totalQty]) => {
+          const initial = stocks.get(productId) ?? 0;
+          const remaining = Math.max(0, initial - totalQty);
+          return syncStockToMercadoLibre(productId, remaining);
+        })
+      );
     }
 
     if (input.paidAmount > 0) {
@@ -800,6 +810,21 @@ export async function createConditionalSale(
       table: "stock_movements",
       ids: (stockMovements ?? []).map((s) => s.id)
     });
+
+    if (input.channel === "PHYSICAL") {
+      const qtyByProduct = new Map<string, number>();
+      for (const item of input.items) {
+        const sum = (qtyByProduct.get(item.productId) ?? 0) + item.qty;
+        qtyByProduct.set(item.productId, sum);
+      }
+      await Promise.allSettled(
+        Array.from(qtyByProduct.entries()).map(([productId, totalQty]) => {
+          const initial = stocks.get(productId) ?? 0;
+          const remaining = Math.max(0, initial - totalQty);
+          return syncStockToMercadoLibre(productId, remaining);
+        })
+      );
+    }
 
     return { ok: true, data: { saleId: sale.id, total } };
   } catch (error) {
