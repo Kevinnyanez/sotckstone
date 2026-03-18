@@ -630,6 +630,17 @@ export async function cancelSale(
     if (stockErr) throw stockErr;
     rollbackOps.push({ table: "stock_movements", ids: (stockMovs ?? []).map((s: { id: string }) => s.id) });
 
+    // Re-sincronizar el stock resultante con ML
+    {
+      const productIds = Array.from(new Set(items.map((item: { product_id: string }) => item.product_id)));
+      const stockAfter = await getStocks(productIds);
+      await Promise.allSettled(
+        productIds.map((productId) =>
+          syncStockToMercadoLibre(productId, Math.max(0, stockAfter.get(productId) ?? 0))
+        )
+      );
+    }
+
     // 2. Revertir caja (salida por el mismo monto)
     if (paidAmount > 0) {
       const { data: cashMovs, error: cashErr } = await supabase
@@ -1032,6 +1043,15 @@ export async function returnConditionalSale(
       .eq("id", sale.id);
     if (updateError) throw updateError;
 
+    // Sincronizar stock modificado con Mercado Libre
+    const productIds = Array.from(new Set(items.map((item) => item.product_id)));
+    const stockAfter = await getStocks(productIds);
+    await Promise.allSettled(
+      productIds.map((productId) =>
+        syncStockToMercadoLibre(productId, Math.max(0, stockAfter.get(productId) ?? 0))
+      )
+    );
+
     return { ok: true, data: { saleId: sale.id } };
   } catch (error) {
     await rollback(rollbackOps);
@@ -1420,6 +1440,20 @@ export async function createExchange(
         await updateAccountStatus(accountId, newBalance);
       }
     }
+
+    // Sincronizar stock modificado con Mercado Libre después del intercambio
+    const productIdsForSync = Array.from(
+      new Set([
+        ...input.itemsIn.map((i) => i.productId),
+        ...input.itemsOut.map((i) => i.productId)
+      ])
+    );
+    const stockAfter = await getStocks(productIdsForSync);
+    await Promise.allSettled(
+      productIdsForSync.map((productId) =>
+        syncStockToMercadoLibre(productId, Math.max(0, stockAfter.get(productId) ?? 0))
+      )
+    );
 
     return { ok: true, data: { exchangeId: exchange.id } };
   } catch (error) {

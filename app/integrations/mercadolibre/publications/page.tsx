@@ -86,6 +86,7 @@ export default function MercadoLibrePublicationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [expandedItemIds, setExpandedItemIds] = useState<Set<string>>(new Set());
+  const [listSearchQuery, setListSearchQuery] = useState("");
 
   const [linkTarget, setLinkTarget] = useState<{
     item: MlItem;
@@ -230,14 +231,44 @@ export default function MercadoLibrePublicationsPage() {
   }, [items]);
 
   const filteredItems = useMemo(() => {
-    if (filterMode === "all") return items;
-    return items.filter((item) => {
-      const linkedCount = item.variants.filter((v) => v.link && v.linkedProduct).length;
-      const unlinkedCount = item.variants.length - linkedCount;
-      if (filterMode === "linked") return linkedCount > 0;
-      return unlinkedCount > 0;
+    let base = items;
+    if (filterMode !== "all") {
+      base = base.filter((item) => {
+        const linkedCount = item.variants.filter((v) => v.link && v.linkedProduct).length;
+        const unlinkedCount = item.variants.length - linkedCount;
+        if (filterMode === "linked") return linkedCount > 0;
+        return unlinkedCount > 0;
+      });
+    }
+
+    const term = listSearchQuery.trim().toLowerCase();
+    if (!term) return base;
+
+    return base.filter((item) => {
+      const titleMatch =
+        (item.title ?? "").toLowerCase().includes(term) ||
+        item.item_id.toLowerCase().includes(term);
+
+      if (titleMatch) return true;
+
+      // Buscar dentro de variantes: SKU ML, nombre/código de producto interno, stock interno
+      return item.variants.some((v) => {
+        const sellerField = (v.seller_custom_field ?? "").toLowerCase();
+        const linkedName = (v.linkedProduct?.name ?? "").toLowerCase();
+        const linkedBarcode = (v.linkedProduct?.barcode ?? "").toLowerCase();
+        const linkedSku = (v.linkedProduct?.sku ?? "").toLowerCase();
+        const internalStock = v.internalStock != null ? String(v.internalStock).toLowerCase() : "";
+
+        return (
+          sellerField.includes(term) ||
+          linkedName.includes(term) ||
+          linkedBarcode.includes(term) ||
+          linkedSku.includes(term) ||
+          internalStock === term
+        );
+      });
     });
-  }, [items, filterMode]);
+  }, [items, filterMode, listSearchQuery]);
 
   const PAGE_SIZE = 10;
   const [pageIndex, setPageIndex] = useState(0);
@@ -386,15 +417,26 @@ export default function MercadoLibrePublicationsPage() {
                 <span className="font-semibold">{summary.unlinked}</span>
               </p>
             </div>
-            <div className="flex items-center gap-2 text-xs">
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                Vinculado
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-rose-700">
-                <span className="h-2 w-2 rounded-full bg-rose-500" />
-                No vinculado
-              </span>
+            <div className="flex flex-col items-end gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  Vinculado
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-rose-700">
+                  <span className="h-2 w-2 rounded-full bg-rose-500" />
+                  No vinculado
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={listSearchQuery}
+                  onChange={(e) => setListSearchQuery(e.target.value)}
+                  placeholder="Buscar por título, ID, SKU ML o producto interno…"
+                  className="h-8 w-64 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                />
+              </div>
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2 text-xs">

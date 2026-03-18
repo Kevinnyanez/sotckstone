@@ -436,14 +436,19 @@ function getDebtDueStatus(createdAt?: string | null): { overdue: boolean; label:
                                 ? new Date(move.created_at).toLocaleString()
                                 : "N/D"}
                             </td>
-                            <td className="py-3 text-slate-700 max-w-[280px] truncate" title={
-                              move.reference_type === "SALE" && move.reference_id && saleProductsBySaleId[move.reference_id]
-                                ? (move.note ? `${move.note} · ${saleProductsBySaleId[move.reference_id]}` : saleProductsBySaleId[move.reference_id])
-                                : (move.note ?? undefined)
-                            }>
-                              {move.reference_type === "SALE" && move.reference_id && saleProductsBySaleId[move.reference_id]
-                                ? (move.note ? `${move.note} · ${saleProductsBySaleId[move.reference_id]}` : saleProductsBySaleId[move.reference_id])
-                                : (move.note ?? "—")}
+                            <td className="py-3 text-slate-700 align-top">
+                              {move.reference_type === "SALE" && move.reference_id && saleProductsBySaleId[move.reference_id] ? (
+                                <div className="space-y-1">
+                                  {move.note && (
+                                    <div className="text-xs text-slate-600">{move.note}</div>
+                                  )}
+                                  <div className="text-xs text-slate-700">
+                                    {saleProductsBySaleId[move.reference_id]}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span>{move.note ?? "—"}</span>
+                              )}
                             </td>
                             <td className={`py-3 text-xs font-medium ${dueStatus.overdue ? "text-rose-700" : "text-slate-600"}`}>
                               {dueStatus.label}
